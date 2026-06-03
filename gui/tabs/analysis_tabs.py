@@ -407,7 +407,7 @@ class AnalysisTabs(ctk.CTkFrame):
             "Server Setup Guide (data-driven from analysis)",
             "=" * 50,
             "",
-            f"Primary tunnel type: {ta.primary_type or g.detected_scenario} ({int((ta.primary_confidence or g.scenario_confidence) * 100)}%)",
+            f"Primary tunnel type: {ta.primary_type or g.detected_scenario} ({int(ta.primary_confidence * 100)}%)",
         ]
         if ta.traffic_flow:
             lines.append(f"Traffic flow: {ta.traffic_flow}")
