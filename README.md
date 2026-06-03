@@ -9,11 +9,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/qashqaeii/XrayBOMB">GitHub Repository</a> ·
   <a href="#english">English</a> · <a href="#فارسی">فارسی</a> ·
-  <a href="release/XrayConfigAnalyzerPro-Windows-x64.zip">Windows Download (ZIP)</a>
+  <a href="https://github.com/qashqaeii/XrayBOMB/raw/main/release/XrayConfigAnalyzerPro-Windows-x64.zip">Windows Download (ZIP)</a>
 </p>
 
 <p align="center">
+  <a href="https://github.com/qashqaeii/XrayBOMB/stargazers"><img src="https://img.shields.io/github/stars/qashqaeii/XrayBOMB?style=social" alt="Stars" /></a>
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows" alt="Windows" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
@@ -51,7 +53,7 @@
 ### Quick start (Python)
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/qashqaeii/XrayBOMB.git
 cd XrayBOMB
 python -m venv venv
 venv\Scripts\activate          # Windows
@@ -67,7 +69,7 @@ python main.py
 
 ### Windows executable (no Python required)
 
-Pre-built package:
+Pre-built package ([direct download](https://github.com/qashqaeii/XrayBOMB/raw/main/release/XrayConfigAnalyzerPro-Windows-x64.zip)):
 
 ```text
 release/XrayConfigAnalyzerPro-Windows-x64.zip
@@ -95,7 +97,7 @@ git tag v2.0.1
 git push origin v2.0.1
 ```
 
-The workflow builds the Windows ZIP and attaches it to **GitHub Releases**.
+The workflow builds the Windows ZIP and attaches it to **[GitHub Releases](https://github.com/qashqaeii/XrayBOMB/releases)**.
 
 ### Supported inputs
 
@@ -148,7 +150,7 @@ MIT — free for personal and commercial use.
 ### نصب سریع (Python)
 
 ```bash
-git clone <آدرس-ریپو>
+git clone https://github.com/qashqaeii/XrayBOMB.git
 cd XrayBOMB
 python -m venv venv
 venv\Scripts\activate
@@ -158,7 +160,7 @@ python main.py
 
 ### نسخه ویندوز (بدون نصب Python)
 
-فایل آماده:
+فایل آماده ([دانلود مستقیم](https://github.com/qashqaeii/XrayBOMB/raw/main/release/XrayConfigAnalyzerPro-Windows-x64.zip)):
 
 ```text
 release/XrayConfigAnalyzerPro-Windows-x64.zip
@@ -179,7 +181,7 @@ python scripts\build_release.py
 
 ### انتشار در GitHub
 
-با push کردن تگ نسخه (مثلاً `v2.0.1`)، workflow به‌صورت خودکار ZIP ویندوز را در **Releases** قرار می‌دهد.
+با push کردن تگ نسخه (مثلاً `v2.0.1`)، workflow به‌صورت خودکار ZIP ویندوز را در **[Releases](https://github.com/qashqaeii/XrayBOMB/releases)** قرار می‌دهد.
 
 ### نکات مهم
 
