@@ -1,155 +1,198 @@
-# Xray Config Analyzer Pro
+<p align="center">
+  <img src="images/github-banner.png" alt="Xray Config Analyzer Pro" width="100%" />
+</p>
 
-Professional desktop application for analyzing Xray/V2Ray proxy configurations with a modern CustomTkinter GUI.
+<h1 align="center">Xray Config Analyzer Pro</h1>
 
-![Python](https://img.shields.io/badge/Python-3.12+-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+<p align="center">
+  <strong>تحلیل هوشمند کانفیگ · Smart Xray/V2Ray Config Analysis</strong>
+</p>
 
-**Developer:** Qashqaeii · **Telegram:** [@Hypertunneladmin](https://t.me/Hypertunneladmin)
+<p align="center">
+  <a href="#english">English</a> · <a href="#فارسی">فارسی</a> ·
+  <a href="release/XrayConfigAnalyzerPro-Windows-x64.zip">Windows Download (ZIP)</a>
+</p>
 
-## Features
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=windows" alt="Windows" />
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
+  <img src="https://img.shields.io/badge/GUI-CustomTkinter-2ea44f" alt="GUI" />
+</p>
 
-- **Multi-Protocol Support**: VLESS, VMESS, Trojan, Shadowsocks, Hysteria2, TUIC
-- **Share Link & JSON Parsing**: Paste links, import files, or fetch subscription URLs
-- **DNS Analysis**: A/AAAA/CNAME records, TTL, reverse DNS, all resolved IPs
-- **Network Intelligence**: ASN, ISP, organization, geolocation, CDN detection
-- **Connectivity Tests**: DNS resolve, TCP connect, TLS handshake, WebSocket upgrade, HTTP response, latency, packet loss
-- **TLS Analysis**: Certificate details, cipher suites, expiry, fingerprint
-- **Xray-Core Integration**: Auto-download and test configs with real Xray binary
-- **Deployment Detection**: Heuristic analysis (Direct VPS, CDN Fronted, Cloudflare, Arvan, Reverse Proxy, etc.)
-- **Security Scoring**: 0–100 score with detailed findings
-- **Reproduction Guide**: What can/cannot be reconstructed from config
-- **Export**: JSON, CSV, Markdown, HTML, PDF
+<p align="center">
+  <b>Developer:</b> Qashqaeii ·
+  <b>Telegram:</b> <a href="https://t.me/Hypertunneladmin">@Hypertunneladmin</a> ·
+  <b>Web:</b> <a href="https://www.hypertunnel.app">hypertunnel.app</a>
+</p>
 
-## Requirements
+---
 
-- Python 3.12+
-- Windows / macOS / Linux
+## English
 
-## Installation
+<a id="english"></a>
+
+### Overview
+
+**Xray Config Analyzer Pro** is a professional desktop tool for deep analysis of Xray/V2Ray proxy configurations. Paste a share link, import JSON, or load a subscription — the app runs DNS, network, TLS, security, deployment, and live Xray tests in a modern GUI.
+
+### Highlights
+
+| Area | Capabilities |
+|------|----------------|
+| **Protocols** | VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, WireGuard, OpenVPN |
+| **Analysis** | DNS (A/AAAA/CNAME), ASN/ISP/geo, CDN detection, connectivity, TLS cert |
+| **Live test** | Real Xray-core SOCKS test, speed, leak check, site reachability |
+| **Sites** | Google, Telegram, **YouTube**, **Instagram**, Cloudflare trace, Iranian sites (plugin) |
+| **Deploy guide** | Cloudflare, Arvan, REALITY, reverse proxy, 3x-ui / Marzban steps |
+| **Security** | Score 0–100, findings, recommendations |
+| **Export** | JSON, CSV, Markdown, HTML, PDF · QR code · Cloud sync |
+
+### Quick start (Python)
 
 ```bash
-# Clone or extract the project
+git clone <your-repo-url>
 cd XrayBOMB
-
-# Create virtual environment (recommended)
 python -m venv venv
-
-# Activate (Windows)
-venv\Scripts\activate
-
-# Activate (Linux/macOS)
-source venv/bin/activate
-
-# Install dependencies
+venv\Scripts\activate          # Windows
 pip install -r requirements.txt
-```
-
-## Usage
-
-```bash
 python main.py
 ```
 
-### Quick Start
+1. Paste a config link (`vless://…`) in the sidebar  
+2. Click **Analyze Config**  
+3. Review tabs: Overview, DNS, Network, TLS, Xray Test, Security, Setup Guide, …  
+4. **Download Xray** in the toolbar for live tunnel testing  
+5. **Export** results in your preferred format  
 
-1. **Paste a config link** (e.g. `vless://...`) in the left panel
-2. Click **Analyze Config**
-3. Browse results across 9 tabs: Overview, Protocol, DNS, Network, TLS, Xray Test, Security, Reproduction, Raw Data
-4. Use **Download Xray** to enable live config testing
-5. **Export** results in your preferred format
+### Windows executable (no Python required)
 
-### Supported Input Formats
+Pre-built package:
 
-| Format | Example |
-|--------|---------|
-| VLESS | `vless://uuid@host:443?...` |
-| VMESS | `vmess://base64...` |
-| Trojan | `trojan://password@host:443?...` |
-| Shadowsocks | `ss://method:pass@host:port` |
-| Hysteria2 | `hysteria2://pass@host:443?...` |
-| TUIC | `tuic://uuid:pass@host:443?...` |
-| JSON Config | Full Xray/V2Ray JSON |
-| Subscription | HTTP(S) subscription URL |
-
-## Project Structure
-
-```
-XrayBOMB/
-├── main.py                 # Entry point
-├── requirements.txt
-├── README.md
-├── backend/                # Core analysis engine
-│   ├── models.py           # Pydantic data models
-│   ├── config_parser.py    # Share link & JSON parser
-│   ├── analyzer.py         # Main orchestrator
-│   └── security.py         # Security & deployment analysis
-├── dns_analyzer/           # DNS resolution module
-├── network/                # Connectivity & CDN detection
-├── tls/                    # TLS certificate analysis
-├── xray/                   # Xray-core integration
-├── gui/                    # CustomTkinter interface
-│   ├── app.py              # Main window
-│   ├── components/         # Sidebar, status, log panels
-│   └── tabs/               # Analysis tab views
-├── database/               # SQLite history
-├── reports/                # Export formats
-└── utils/                  # Logging & helpers
+```text
+release/XrayConfigAnalyzerPro-Windows-x64.zip
 ```
 
-## GUI Layout
+After unzip, run:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ⚡ Xray Config Analyzer Pro       [Download Xray] [Export] │
-├──────────┬─────────────────────────────────┬────────────────┤
-│ Config   │  [Overview|Protocol|DNS|...]    │ Status Panel   │
-│ Input    │                                 │ Connection ●   │
-│          │  Analysis Results               │ DNS        ●   │
-│ [Paste]  │                                 │ TLS        ●   │
-│ [Import] │                                 │ Xray Test  ●   │
-│ [Sub URL]│                                 │ Score: 92/100  │
-│          │                                 │                │
-│ [Analyze]│                                 │                │
-├──────────┴─────────────────────────────────┴────────────────┤
-│ Live Log: [12:00:01] Starting analysis...                    │
-└─────────────────────────────────────────────────────────────┘
+```text
+XrayConfigAnalyzerPro\XrayConfigAnalyzerPro.exe
 ```
 
-## Important Notes
-
-- **No fabricated data**: When information cannot be inferred from the config, the app explicitly states: *"این اطلاعات از روی کانفیگ قابل استنتاج قطعی نیست."*
-- **Non-blocking UI**: All network/analysis operations run in background threads
-- **Xray-core**: Downloaded to `~/.xray_analyzer/xray/` on first use
-- **History**: Analysis results saved to `~/.xray_analyzer/history.db`
-
-## CDN Detection
-
-The app detects these CDNs heuristically:
-
-- Cloudflare
-- ArvanCloud
-- Akamai
-- Fastly
-- CloudFront (AWS)
-- Bunny CDN
-- Gcore
-
-## GitHub release (Windows executable)
-
-The project ships a **ZIP in `release/`** with the standalone GUI (no Python install required for end users).
+Build locally:
 
 ```powershell
 pip install -r requirements.txt
 python scripts\build_release.py
 ```
 
-Output: `release/XrayConfigAnalyzerPro-Windows-x64.zip` → unzip → run `XrayConfigAnalyzerPro\XrayConfigAnalyzerPro.exe`.
+### GitHub Release
 
-To publish on GitHub: push a version tag (e.g. `git tag v2.0.1 && git push origin v2.0.1`). The workflow in `.github/workflows/release.yml` builds the same ZIP and attaches it to the GitHub Release.
+Push a version tag to trigger CI (`.github/workflows/release.yml`):
 
-Proxy tunnel tests include **YouTube** and **Instagram** reachability checks.
+```bash
+git tag v2.0.1
+git push origin v2.0.1
+```
 
-## License
+The workflow builds the Windows ZIP and attaches it to **GitHub Releases**.
 
-MIT License — free for personal and commercial use.
+### Supported inputs
+
+| Format | Example |
+|--------|---------|
+| VLESS | `vless://uuid@host:443?...` |
+| VMess | `vmess://base64...` |
+| Trojan | `trojan://password@host:443?...` |
+| Shadowsocks | `ss://method:pass@host:port` |
+| Hysteria2 / TUIC | `hysteria2://…` / `tuic://…` |
+| JSON | Full Xray/V2Ray config |
+| Subscription | HTTP(S) subscription URL |
+
+### CDN detection
+
+Cloudflare, ArvanCloud, Akamai, Fastly, CloudFront, Bunny CDN, Gcore — heuristic detection from DNS and IP data.
+
+### Principles
+
+- **No fabricated data** — unknown fields are marked explicitly  
+- **Non-blocking UI** — analysis runs in background threads  
+- **Xray-core** — auto-downloaded to `~/.xray_analyzer/xray/` on first use  
+
+### License
+
+MIT — free for personal and commercial use.
+
+---
+
+## فارسی
+
+<a id="فارسی"></a>
+
+### معرفی
+
+**Xray Config Analyzer Pro** یک نرم‌افزار دسکتاپ حرفه‌ای برای تحلیل عمیق کانفیگ‌های Xray/V2Ray است. لینک اشتراک، فایل JSON یا سابسکریپشن را وارد کنید — برنامه DNS، شبکه، TLS، امنیت، نوع دیپلوی و تست زنده Xray را در یک رابط مدرن اجرا می‌کند.
+
+### قابلیت‌های کلیدی
+
+| بخش | توضیح |
+|-----|--------|
+| **پروتکل‌ها** | VLESS، VMess، Trojan، Shadowsocks، Hysteria2، TUIC و … |
+| **تحلیل** | DNS، ASN/ISP، موقعیت، CDN، اتصال TCP/TLS، گواهی |
+| **تست زنده** | اجرای Xray-core، سرعت، نشت IP/DNS، دسترسی سایت‌ها |
+| **سایت‌ها** | گوگل، تلگرام، **یوتیوب**، **اینستاگرام**، Cloudflare trace، سایت‌های ایرانی |
+| **راهنمای سرور** | Cloudflare، آروان، REALITY، reverse proxy، 3x-ui / Marzban |
+| **امنیت** | امتیاز ۰–۱۰۰، یافته‌ها و پیشنهادها |
+| **خروجی** | JSON، CSV، Markdown، HTML، PDF · QR · همگام‌سازی ابری |
+
+### نصب سریع (Python)
+
+```bash
+git clone <آدرس-ریپو>
+cd XrayBOMB
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+
+### نسخه ویندوز (بدون نصب Python)
+
+فایل آماده:
+
+```text
+release/XrayConfigAnalyzerPro-Windows-x64.zip
+```
+
+بعد از extract:
+
+```text
+XrayConfigAnalyzerPro\XrayConfigAnalyzerPro.exe
+```
+
+ساخت محلی:
+
+```powershell
+pip install -r requirements.txt
+python scripts\build_release.py
+```
+
+### انتشار در GitHub
+
+با push کردن تگ نسخه (مثلاً `v2.0.1`)، workflow به‌صورت خودکار ZIP ویندوز را در **Releases** قرار می‌دهد.
+
+### نکات مهم
+
+- اطلاعات حدسی به‌صورت شفاف از داده‌های واقعی کانفیگ استخراج می‌شود  
+- رابط کاربری در حین تحلیل قفل نمی‌شود  
+- تاریخچه تحلیل در `~/.xray_analyzer/history.db` ذخیره می‌شود  
+
+### مجوز
+
+MIT — استفاده شخصی و تجاری آزاد.
+
+---
+
+<p align="center">
+  <sub>Made with precision for network operators and config analysts.</sub>
+</p>
