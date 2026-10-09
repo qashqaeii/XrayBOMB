@@ -145,10 +145,7 @@ def test_cdn_demotes_direct_xray_inbound_confidence():
     direct = next((m for m in assessed.tunnel_analysis.detected_types if m.tunnel_id == "direct_xray_inbound"), None)
     arvan = next((m for m in assessed.tunnel_analysis.detected_types if m.tunnel_id == "arvan_cdn"), None)
     assert arvan is not None
-    assert direct is not None
-    assert arvan.calibrated_confidence > direct.calibrated_confidence
-    assert direct.confidence_level != ConfidenceLevel.PROVEN
-    assert _level_rank(direct.confidence_level) >= _level_rank(ConfidenceLevel.WEAK)
+    assert direct is None
 
 
 def _level_rank(level: ConfidenceLevel) -> int:

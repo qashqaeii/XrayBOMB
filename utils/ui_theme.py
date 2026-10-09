@@ -16,16 +16,19 @@ LOG_MIN_HEIGHT = 150
 CONTENT_LOG_RATIO = (4, 1)  # main workspace vs live log
 
 # Palette
-BG_DARK = "#0d0d1a"
-PANEL_BG = "#1a1a2e"
-PANEL_BORDER = "#2a2a4e"
-TOOLBAR_BG = "#16213e"
-ACCENT = "#00d4ff"
-ACCENT_BTN = "#0066cc"
-ACCENT_BTN_HOVER = "#0052a3"
-TEXT_MUTED = "#8888aa"
-TEXT_DIM = "#666688"
-SECTION_DIVIDER = "#2a2a4e"
+BG_DARK = "#0b0f17"
+PANEL_BG = "#141b26"
+PANEL_BORDER = "#243044"
+TOOLBAR_BG = "#111827"
+ACCENT = "#38bdf8"
+ACCENT_BTN = "#2563eb"
+ACCENT_BTN_HOVER = "#1d4ed8"
+TEXT_MUTED = "#94a3b8"
+TEXT_DIM = "#64748b"
+SECTION_DIVIDER = "#1e293b"
+SUCCESS = "#22c55e"
+WARNING = "#f59e0b"
+DANGER = "#ef4444"
 
 
 def _first_available_font(candidates: tuple[str, ...]) -> str:

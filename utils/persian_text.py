@@ -44,13 +44,16 @@ def reshape_mixed(text: str) -> str:
     _load_reshaper()
     if not _reshaper:
         return text
+    if _ARABIC_RE.fullmatch(text.strip()):
+        return _reshaper.reshape(text)
     parts = _ARABIC_PART.split(text)
     out: list[str] = []
     for part in parts:
         if not part:
             continue
         out.append(_reshaper.reshape(part) if _ARABIC_RE.search(part) else part)
-    return "".join(out)
+    joined = "".join(out)
+    return joined if joined else _reshaper.reshape(text)
 
 
 def is_ltr_line(line: str) -> bool:

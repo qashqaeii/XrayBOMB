@@ -29,7 +29,10 @@ from backend.security import (
     apply_traceroute_to_deployment,
     build_reproduction_guide,
 )
+from backend.endpoint_targets import resolve_endpoint_targets
+from backend.implementation_analysis import build_implementation_analysis
 from backend.stealth_assessment import assess_stealth
+from backend.test_environment import build_test_environment_report
 from dns_analyzer.resolver import analyze_dns
 from network.cdn_detector import lookup_ip_intelligence
 from network.connectivity import run_connectivity_tests
@@ -124,10 +127,13 @@ class ConfigAnalyzer:
         log(f"Analyzing {config.protocol.value} → {config.address}:{config.port}")
 
         stage(2, "DNS")
-        dns_host = config.sni or config.address
-        dns_result = await analyze_dns(dns_host)
-        ips = dns_result.all_resolved_ips or ([config.address] if is_ip_address(config.address) else [])
-        connect_host = ips[0] if ips else config.address
+        endpoints = await resolve_endpoint_targets(config)
+        dns_result = endpoints.dns_connect
+        ips = endpoints.resolved_connect_ips or (
+            [config.address] if is_ip_address(config.address) else []
+        )
+        connect_host = endpoints.primary_connect_ip or config.address
+        tls_sni = endpoints.tls_sni or config.sni or config.host or config.address
 
         # Parallel I/O: network lookups, connectivity, TLS, traceroute, cert transparency
         stage(3, "Network + Connectivity + TLS")
@@ -140,9 +146,13 @@ class ConfigAnalyzer:
             cert_ct,
         ) = await asyncio.gather(
             self._lookup_network(ips[:5], dns_result.reverse_dns),
-            run_connectivity_tests(config),
-            analyze_tls(config, connect_host),
-            self._run_traceroute(config, connect_host),
+            run_connectivity_tests(
+                config,
+                connect_host=connect_host if not is_ip_address(config.address) else config.address,
+                resolved_ips=ips,
+            ),
+            analyze_tls(config, connect_host, tls_sni=tls_sni),
+            self._run_traceroute(config, connect_host or config.address),
             self._run_cert_ct(config),
         )
         log(f"Network: {len(network_results)} IP(s) | Connectivity: {connectivity.tcp_connect.value}")
@@ -193,34 +203,8 @@ class ConfigAnalyzer:
             config, dns_result, network_results, connectivity,
             deployment, traceroute, tunnel, xray_result,
         )
-        setup_guide = build_deployment_setup_guide(
-            config, deployment, tls_result, dns_result, network_results,
-            connectivity, tunnel, traceroute, xray_result, tunnel_analysis,
-        )
 
-        optimization = build_config_optimization(
-            AnalysisResult(
-                config=config,
-                validation=validation,
-                dns=dns_result,
-                network=network_results,
-                connectivity=connectivity,
-                tls=tls_result,
-                deployment=deployment,
-                security=security,
-                reproduction=reproduction,
-                setup_guide=setup_guide,
-                xray_test=xray_result,
-                tunnel=tunnel,
-                tunnel_analysis=tunnel_analysis,
-                traceroute=traceroute,
-                threat_intel=threat_intel,
-                cert_transparency=cert_ct,
-                xray_installed=xray_installed,
-            )
-        )
-
-        result = AnalysisResult(
+        pre_calibrated = AnalysisResult(
             config=config,
             validation=validation,
             dns=dns_result,
@@ -230,7 +214,6 @@ class ConfigAnalyzer:
             deployment=deployment,
             security=security,
             reproduction=reproduction,
-            setup_guide=setup_guide,
             xray_test=xray_result,
             tunnel=tunnel,
             tunnel_analysis=tunnel_analysis,
@@ -238,10 +221,35 @@ class ConfigAnalyzer:
             threat_intel=threat_intel,
             cert_transparency=cert_ct,
             xray_installed=xray_installed,
-            optimization=optimization,
-            raw_data={},
+            endpoint_targets=endpoints.model_dump(),
+            test_environment=build_test_environment_report().model_dump(),
         )
-        result = assess_stealth(result)
+        pre_calibrated = assess_stealth(pre_calibrated)
+        deployment = pre_calibrated.deployment
+        tunnel_analysis = pre_calibrated.tunnel_analysis
+
+        setup_guide = build_deployment_setup_guide(
+            config, deployment, tls_result, dns_result, network_results,
+            connectivity, tunnel, traceroute, xray_result, tunnel_analysis,
+        )
+
+        optimization = build_config_optimization(
+            pre_calibrated.model_copy(update={"setup_guide": setup_guide})
+        )
+
+        impl = build_implementation_analysis(
+            pre_calibrated.model_copy(update={
+                "setup_guide": setup_guide,
+                "optimization": optimization,
+            })
+        )
+
+        result = pre_calibrated.model_copy(update={
+            "setup_guide": setup_guide,
+            "optimization": optimization,
+            "implementation_analysis": impl.model_dump(),
+            "raw_data": {},
+        })
 
         stage(14, "Plugins")
         result = get_plugin_manager().run_hooks(result, config)
@@ -251,6 +259,7 @@ class ConfigAnalyzer:
             "config_dict": config.model_dump(),
             "validation": validation.model_dump(),
             "dns": dns_result.model_dump(),
+            "endpoint_targets": endpoints.model_dump(),
             "network": [n.model_dump() for n in network_results],
             "connectivity": connectivity.model_dump(),
             "tls": tls_result.model_dump(mode="json"),
@@ -270,6 +279,8 @@ class ConfigAnalyzer:
             "camouflage": result.camouflage.model_dump(),
             "origin_exposure": result.origin_exposure.model_dump(),
             "confidence_calibration": result.confidence_calibration.model_dump(),
+            "test_environment": result.test_environment,
+            "implementation_analysis": result.implementation_analysis,
         }
         if plugin_data:
             result.raw_data["plugins"] = plugin_data

@@ -14,6 +14,7 @@ import websocket
 from backend.models import ConnectivityResult, ParsedConfig, TestStatus, TransportType
 from network.http_probe import probe_http_fingerprint
 from network.latency_benchmark import benchmark_tcp_latency
+from network.transport_security import http_scheme, uses_tls_layer, websocket_scheme
 from network.transport_tests import run_transport_tests
 from utils.helpers import is_ip_address
 from utils.logger import get_logger
@@ -22,7 +23,6 @@ logger = get_logger(__name__)
 
 
 async def test_dns_resolve(hostname: str) -> tuple[TestStatus, Optional[float]]:
-    """Test DNS resolution latency."""
     if is_ip_address(hostname):
         return TestStatus.VALID, 0.0
     start = time.perf_counter()
@@ -37,7 +37,6 @@ async def test_dns_resolve(hostname: str) -> tuple[TestStatus, Optional[float]]:
 
 
 async def test_tcp_connect(host: str, port: int, timeout: float = 10) -> tuple[TestStatus, Optional[float]]:
-    """Test TCP connection."""
     start = time.perf_counter()
     try:
         _, writer = await asyncio.wait_for(
@@ -58,14 +57,19 @@ async def test_tls_handshake(
     port: int,
     sni: Optional[str] = None,
     timeout: float = 10,
+    *,
+    verify: bool = False,
 ) -> tuple[TestStatus, Optional[float]]:
-    """Test TLS handshake."""
     sni = sni or host
     start = time.perf_counter()
     try:
         ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        if verify:
+            ctx.check_hostname = True
+            ctx.verify_mode = ssl.CERT_REQUIRED
+        else:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
 
         loop = asyncio.get_event_loop()
 
@@ -82,21 +86,26 @@ async def test_tls_handshake(
         return TestStatus.INVALID, None
 
 
-async def test_websocket_upgrade(host: str, port: int, path: str, sni: Optional[str] = None) -> TestStatus:
-    """Test WebSocket upgrade."""
+async def test_websocket_upgrade(config: ParsedConfig, connect_host: str, port: int, path: str) -> TestStatus:
     path = path or "/"
     if not path.startswith("/"):
         path = "/" + path
-    scheme = "wss" if port == 443 else "ws"
-    url = f"{scheme}://{host}:{port}{path}"
+    scheme = websocket_scheme(config)
+    host_header = config.host or config.sni or connect_host
+    sni = config.sni or host_header
+    url = f"{scheme}://{connect_host}:{port}{path}"
 
     def _ws_test() -> bool:
         try:
+            sslopt = None
+            if scheme == "wss":
+                sslopt = {"cert_reqs": ssl.CERT_NONE, "server_hostname": sni}
             ws = websocket.create_connection(
                 url,
                 timeout=10,
-                header={"Host": sni or host},
-                sslopt={"cert_reqs": ssl.CERT_NONE},
+                host=sni if scheme == "wss" else connect_host,
+                header={"Host": host_header},
+                sslopt=sslopt,
             )
             ws.close()
             return True
@@ -111,74 +120,99 @@ async def test_websocket_upgrade(host: str, port: int, path: str, sni: Optional[
         return TestStatus.INVALID
 
 
-async def test_http_response(host: str, port: int, sni: Optional[str] = None) -> tuple[TestStatus, Optional[int]]:
-    """Test HTTP/HTTPS response."""
-    scheme = "https" if port == 443 else "http"
-    url = f"{scheme}://{host}:{port}/"
+async def test_http_response(
+    config: ParsedConfig,
+    connect_host: str,
+    port: int,
+    sni: Optional[str] = None,
+) -> tuple[TestStatus, Optional[int], str]:
+    scheme = http_scheme(config)
+    url = f"{scheme}://{connect_host}:{port}/"
+    host_header = config.host or sni or connect_host
     try:
-        async with httpx.AsyncClient(timeout=10, verify=False) as client:
-            headers = {"Host": sni} if sni else {}
+        async with httpx.AsyncClient(timeout=10, verify=False, trust_env=False) as client:
+            headers = {"Host": host_header} if host_header else {}
             response = await client.get(url, headers=headers)
+            note = ""
             if response.status_code < 500:
-                return TestStatus.VALID, response.status_code
-            return TestStatus.WARNING, response.status_code
+                if response.status_code in (403, 405):
+                    note = f"HTTP {response.status_code} received (not full usability proof)"
+                status = TestStatus.VALID
+                return status, response.status_code, note
+            return TestStatus.WARNING, response.status_code, f"HTTP {response.status_code}"
     except Exception as exc:
         logger.debug("HTTP test failed: %s", exc)
-        return TestStatus.INVALID, None
+        return TestStatus.INVALID, None, str(exc)[:120]
 
 
-async def test_packet_loss(host: str, port: int, count: int = 4) -> Optional[float]:
-    """Estimate packet loss via repeated TCP connect attempts."""
+async def test_tcp_connection_failure_rate(host: str, port: int, count: int = 4) -> Optional[float]:
     successes = 0
     for _ in range(count):
         status, _ = await test_tcp_connect(host, port, timeout=5)
         if status == TestStatus.VALID:
             successes += 1
-    loss = ((count - successes) / count) * 100
-    return round(loss, 1)
+    return round(((count - successes) / count) * 100, 1)
 
 
-async def run_connectivity_tests(config: ParsedConfig) -> ConnectivityResult:
-    """Run all connectivity tests for a config."""
+async def run_connectivity_tests(
+    config: ParsedConfig,
+    *,
+    connect_host: Optional[str] = None,
+    resolved_ips: Optional[list[str]] = None,
+) -> ConnectivityResult:
     result = ConnectivityResult()
     host = config.address
     port = config.port or 443
-    sni = config.sni or config.host or host
+    tls_sni = config.sni or config.host or host
 
     result.dns_resolve, result.dns_latency_ms = await test_dns_resolve(host)
     if result.dns_resolve == TestStatus.INVALID:
-        result.errors.append("DNS resolution failed")
+        result.errors.append("DNS resolution failed for connect address")
 
-    connect_host = host
-    if not is_ip_address(host) and result.dns_resolve == TestStatus.VALID:
+    if connect_host:
+        tcp_target = connect_host
+    elif not is_ip_address(host) and result.dns_resolve == TestStatus.VALID:
         try:
             loop = asyncio.get_event_loop()
             infos = await loop.getaddrinfo(host, port)
-            connect_host = infos[0][4][0]
+            tcp_target = infos[0][4][0]
         except Exception:
-            pass
+            tcp_target = host
+    else:
+        tcp_target = host
 
-    result.tcp_connect, result.tcp_latency_ms = await test_tcp_connect(connect_host, port)
+    if resolved_ips and len(resolved_ips) > 1:
+        result.errors.append(f"Multiple connect IPs: {', '.join(resolved_ips[:6])}")
+
+    result.tcp_connect, result.tcp_latency_ms = await test_tcp_connect(tcp_target, port)
     if result.tcp_connect == TestStatus.INVALID:
         result.errors.append("TCP connection failed")
 
-    if config.tls or config.reality or port == 443:
-        result.tls_handshake, result.tls_latency_ms = await test_tls_handshake(connect_host, port, sni)
+    if uses_tls_layer(config) or port == 443:
+        result.tls_handshake, result.tls_latency_ms = await test_tls_handshake(
+            tcp_target, port, tls_sni, verify=False,
+        )
         if result.tls_handshake == TestStatus.INVALID:
-            result.errors.append("TLS handshake failed")
+            result.errors.append("TLS handshake probe failed (unverified probe mode)")
 
-    if config.transport_type == TransportType.WS:
-        result.websocket_upgrade = await test_websocket_upgrade(host, port, config.path or "/", sni)
-        if result.websocket_upgrade == TestStatus.INVALID:
-            result.websocket_upgrade_note = (
-                "Generic WS handshake to VLESS path failed — expected if path requires "
-                "Xray client protocol (not proof the tunnel is broken)."
-            )
-    else:
-        result.websocket_upgrade = TestStatus.SKIPPED
-
-    transport_tests = await run_transport_tests(config, connect_host)
+    transport_tests = await run_transport_tests(config, tcp_target)
     result.transport_tests = transport_tests
+
+    ws_from_transport = next((t for t in transport_tests if t.transport == "WebSocket"), None)
+    if config.transport_type == TransportType.WS:
+        if ws_from_transport:
+            result.websocket_upgrade = ws_from_transport.status
+            result.websocket_upgrade_note = ws_from_transport.details
+        else:
+            result.websocket_upgrade = await test_websocket_upgrade(config, tcp_target, port, config.path or "/")
+            if result.websocket_upgrade == TestStatus.INVALID:
+                result.websocket_upgrade_note = (
+                    "External WS probe failed — may differ from xray-core parameters; "
+                    "check end-to-end xray test."
+                )
+    else:
+        result.websocket_upgrade = TestStatus.NOT_APPLICABLE
+
     for tt in transport_tests:
         if tt.transport == "gRPC":
             result.grpc_test = tt.status
@@ -186,17 +220,18 @@ async def run_connectivity_tests(config: ParsedConfig) -> ConnectivityResult:
             result.quic_test = tt.status
         elif tt.transport == "REALITY":
             result.reality_test = tt.status
-        elif tt.transport == "WebSocket":
-            result.websocket_upgrade = tt.status
 
-    if connect_host and result.tcp_connect == TestStatus.VALID:
-        result.latency_benchmark = await benchmark_tcp_latency(connect_host, port)
+    if tcp_target and result.tcp_connect == TestStatus.VALID:
+        result.latency_benchmark = await benchmark_tcp_latency(tcp_target, port)
 
-    result.http_response, result.http_status_code = await test_http_response(connect_host, port, sni)
+    http_status, code, http_note = await test_http_response(config, tcp_target, port, tls_sni)
+    result.http_response = http_status
+    result.http_status_code = code
+    result.http_response_note = http_note
 
     if not is_ip_address(host):
         fp = await probe_http_fingerprint(
-            host, port, config.path or "/", sni=sni or host,
+            host, port, config.path or "/", sni=tls_sni or host,
         )
         result.http_probe_url = fp.get("url")
         result.http_server_header = fp.get("http_server")
@@ -213,6 +248,8 @@ async def run_connectivity_tests(config: ParsedConfig) -> ConnectivityResult:
     if latencies:
         result.latency_ms = round(sum(latencies), 2)
 
-    result.packet_loss_percent = await test_packet_loss(connect_host, port)
+    failure_rate = await test_tcp_connection_failure_rate(tcp_target, port)
+    result.tcp_connection_failure_rate = failure_rate
+    result.packet_loss_percent = failure_rate
 
     return result

@@ -127,7 +127,9 @@ def _correct_iran_mobile_geo(result: dict) -> dict:
 
 
 def _client_geo_score(result: dict) -> tuple[int, int, int]:
-    """Higher is better — prefer Iranian ASN, then IR country, then ipwho source."""
+    """Prefer consistent multi-provider agreement; Iranian ASN correction is applied after pick."""
+    has_country = int(bool(result.get("country_code")))
+    ipwho = int(result.get("source") == "ipwho.is")
     iran_id = int(
         is_iranian_network_identity(
             asn=result.get("asn"),
@@ -135,16 +137,25 @@ def _client_geo_score(result: dict) -> tuple[int, int, int]:
             organization=result.get("organization"),
         )
     )
-    ir_cc = int(result.get("country_code") == "IR")
-    ipwho = int(result.get("source") == "ipwho.is")
-    return (iran_id, ir_cc, ipwho)
+    return (has_country, ipwho, iran_id)
 
 
 def _pick_best_client_geo(candidates: list[dict]) -> dict:
     if not candidates:
         return {}
-    best = max(candidates, key=_client_geo_score)
-    return _correct_iran_mobile_geo(best)
+    ips = {c.get("ip") for c in candidates if c.get("ip")}
+    if len(ips) == 1:
+        best = candidates[0]
+    else:
+        best = max(candidates, key=_client_geo_score)
+    corrected = _correct_iran_mobile_geo(best)
+    if len(ips) > 1:
+        corrected = {
+            **corrected,
+            "multi_egress_ips": sorted(ips),
+            "geo_inconclusive": True,
+        }
+    return corrected
 
 
 async def _discover_public_ips(client: httpx.AsyncClient) -> list[str]:

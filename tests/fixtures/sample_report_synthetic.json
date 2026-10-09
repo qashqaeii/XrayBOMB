@@ -1,0 +1,37 @@
+{
+  "title": "XrayBOMB synthetic sample (no real credentials)",
+  "config": {
+    "protocol": "VLESS",
+    "address": "edge.cdn.example",
+    "port": 2083,
+    "transport_type": "WebSocket",
+    "tls": true,
+    "sni": "sni.example.com",
+    "host": "host.example.com",
+    "uuid": "0000****0001"
+  },
+  "test_environment": {
+    "vpn_guidance": "Compare with VPN off for clean baseline.",
+    "trust_env_direct_http": false
+  },
+  "xray_test": {
+    "status": "Valid",
+    "run_id": "sample001",
+    "socks_port": 28441,
+    "socks_host": "127.0.0.1",
+    "config_fingerprint": "abc123",
+    "summary": "HTTPS E2E OK via isolated SOCKS"
+  },
+  "leak_check": {
+    "exit_ip_same_observed": false,
+    "dns_leak_status": "Not tested",
+    "notes": ["DNS leak: not tested (requires controlled resolver infrastructure)."]
+  },
+  "implementation_analysis": {
+    "title": "معماری سازگار با مشاهدات"
+  },
+  "limitations": [
+    "Client cannot prove origin behind CDN without server-side evidence.",
+    "External WS probe may differ from xray-core handshake parameters."
+  ]
+}

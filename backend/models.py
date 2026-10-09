@@ -36,9 +36,14 @@ class TransportType(str, Enum):
 class TestStatus(str, Enum):
     VALID = "Valid"
     INVALID = "Invalid"
+    FAILED = "Failed"
     WARNING = "Warning"
     PENDING = "Pending"
     SKIPPED = "Skipped"
+    NOT_TESTED = "Not tested"
+    NOT_APPLICABLE = "Not applicable"
+    UNSUPPORTED = "Unsupported"
+    INCONCLUSIVE = "Inconclusive"
 
 
 class ParsedConfig(BaseModel):
@@ -201,7 +206,9 @@ class ConnectivityResult(BaseModel):
     http_response: TestStatus = TestStatus.PENDING
     http_status_code: Optional[int] = None
     latency_ms: Optional[float] = None
-    packet_loss_percent: Optional[float] = None
+    packet_loss_percent: Optional[float] = None  # legacy alias
+    tcp_connection_failure_rate: Optional[float] = None
+    http_response_note: str = ""
     latency_benchmark: LatencyStats = Field(default_factory=LatencyStats)
     transport_tests: list[TransportTestResult] = Field(default_factory=list)
     http_server_header: Optional[str] = None
@@ -216,6 +223,11 @@ class ConnectivityResult(BaseModel):
 
 class TLSAnalysis(BaseModel):
     enabled: bool = False
+    tls_configured: bool = False
+    handshake_observed: bool = False
+    chain_trusted: Optional[bool] = None
+    hostname_matched: Optional[bool] = None
+    collection_mode: str = "unverified_probe"
     version: Optional[str] = None
     cipher_suite: Optional[str] = None
     certificate_subject: Optional[str] = None
@@ -429,21 +441,33 @@ class LeakCheckResult(BaseModel):
     proxy_exit_country: Optional[str] = None
     proxy_exit_colo: Optional[str] = None
     test_hostname: str = ""
+    server_dns_ips: list[str] = Field(default_factory=list)
     direct_dns_ips: list[str] = Field(default_factory=list)
+    exit_ip_same_observed: Optional[bool] = None
     ip_leak: bool = False
     dns_leak: Optional[bool] = None
+    dns_leak_status: TestStatus = TestStatus.NOT_TESTED
+    baseline_inconclusive: bool = False
     notes: list[str] = Field(default_factory=list)
 
 
 class XrayTestResult(BaseModel):
     status: TestStatus = TestStatus.PENDING
+    run_id: Optional[str] = None
     xray_version: Optional[str] = None
+    process_pid: Optional[int] = None
+    config_fingerprint: Optional[str] = None
+    started_at: Optional[datetime] = None
+    exit_code: Optional[int] = None
     log_output: str = ""
     summary: str = ""
     errors: list[str] = Field(default_factory=list)
+    config_validation: TestStatus = TestStatus.PENDING
+    config_validation_detail: str = ""
     proxy_test: TestStatus = TestStatus.PENDING
     proxy_latency_ms: Optional[float] = None
     socks_port: int = 10808
+    socks_host: str = "127.0.0.1"
     site_reachability: list[SiteReachabilityResult] = Field(default_factory=list)
     speed_test: SpeedTestResult = Field(default_factory=SpeedTestResult)
     leak_check: LeakCheckResult = Field(default_factory=LeakCheckResult)
@@ -547,6 +571,9 @@ class AnalysisResult(BaseModel):
     camouflage: TrafficCamouflageReport = Field(default_factory=TrafficCamouflageReport)
     origin_exposure: OriginExposureReport = Field(default_factory=OriginExposureReport)
     confidence_calibration: ConfidenceCalibrationReport = Field(default_factory=ConfidenceCalibrationReport)
+    test_environment: dict[str, Any] = Field(default_factory=dict)
+    endpoint_targets: dict[str, Any] = Field(default_factory=dict)
+    implementation_analysis: dict[str, Any] = Field(default_factory=dict)
     analyzed_at: datetime = Field(default_factory=datetime.now)
     raw_data: dict[str, Any] = Field(default_factory=dict)
 

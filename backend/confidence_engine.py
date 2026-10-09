@@ -246,9 +246,10 @@ def build_confidence_calibration(
     for match in tunnel.detected_types:
         if not match.evidence:
             continue
-        direct_obs = any(
-            kw in " ".join(match.evidence).lower()
-            for kw in ("proxy_test=valid", "cdn=", "reality", "cname=", "datacenter=")
+        ev_joined = " ".join(match.evidence).lower()
+        direct_obs = "cname=" in ev_joined or (
+            "xray_proxy_test=valid" in ev_joined
+            and any(tok in ev_joined for tok in ("panel=", "http_server=", "tls_fingerprint=", "cfargotunnel"))
         )
         cal, level = calibrate_evidence(
             match.confidence,
@@ -345,9 +346,7 @@ def build_confidence_calibration(
         ))
     if origin.risk_score is not None:
         origin_conf = (
-            ConfidenceLevel.PROVEN
-            if live and origin.inferred_origin_ip and len(origin.factors) >= 2
-            else ConfidenceLevel.STRONG if origin.factors
+            ConfidenceLevel.STRONG if origin.factors
             else ConfidenceLevel.SPECULATIVE
         )
         insights.append(CalibratedInsight(

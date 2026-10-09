@@ -15,6 +15,7 @@ from backend.models import AnalysisResult, BatchAnalysisResult
 from utils.branding import developer_credit
 from utils.helpers import mask_sensitive
 from utils.logger import get_logger
+from utils.redaction import deep_redact, redact_analysis_dict
 from utils.settings import get_settings
 
 logger = get_logger(__name__)
@@ -23,11 +24,7 @@ logger = get_logger(__name__)
 def _redact_result(result: AnalysisResult) -> AnalysisResult:
     if not get_settings().redact_secrets_export:
         return result
-    data = result.model_dump()
-    c = data.get("config", {})
-    for key in ("uuid", "password", "public_key", "short_id"):
-        if c.get(key):
-            c[key] = mask_sensitive(c[key])
+    data = redact_analysis_dict(result.model_dump(mode="json"))
     return AnalysisResult.model_validate(data)
 
 
@@ -38,7 +35,10 @@ class ReportExporter:
         self.result = _redact_result(result)
 
     def to_json(self, indent: int = 2) -> str:
-        return self.result.model_dump_json(indent=indent)
+        payload = self.result.model_dump(mode="json")
+        if get_settings().redact_secrets_export:
+            payload = deep_redact(payload)
+        return json.dumps(payload, indent=indent, default=str)
 
     def to_csv(self) -> str:
         r = self.result

@@ -17,9 +17,10 @@ def socks_proxy_url(port: int, host: str = "127.0.0.1") -> str:
 def make_async_socks_client(
     port: int,
     *,
+    host: str = "127.0.0.1",
     timeout: float = DEFAULT_TIMEOUT,
-    verify: bool = False,
+    verify: bool = True,
 ) -> httpx.AsyncClient:
     """Async httpx client through local SOCKS5 (httpx built-in proxy has a socksio bug)."""
-    transport = AsyncProxyTransport.from_url(socks_proxy_url(port))
-    return httpx.AsyncClient(transport=transport, timeout=timeout, verify=verify)
+    transport = AsyncProxyTransport.from_url(socks_proxy_url(port, host))
+    return httpx.AsyncClient(transport=transport, timeout=timeout, verify=verify, trust_env=False)

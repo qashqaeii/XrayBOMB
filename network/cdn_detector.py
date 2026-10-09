@@ -36,7 +36,8 @@ CDN_SIGNATURES: dict[str, dict] = {
     },
     "CloudFront": {
         "asns": ["AS16509", "16509"],
-        "org_keywords": ["amazon", "cloudfront", "aws"],
+        "org_keywords": ["cloudfront"],
+        "require_org_keyword": True,
     },
     "Bunny": {
         "asns": ["AS200325", "200325"],
@@ -97,11 +98,15 @@ def detect_cdn(
             confidence = max(confidence, 0.85)
         for asn_sig in sig.get("asns", []):
             asn_sig_norm = asn_sig.upper().replace("AS", "")
-            if asn_norm and (asn_norm == asn_sig_norm or asn_norm.endswith(asn_sig_norm)):
-                confidence = max(confidence, 0.90)
+            if asn_norm and asn_norm == asn_sig_norm:
+                confidence = max(confidence, 0.55 if sig.get("require_org_keyword") else 0.90)
+        org_hit = False
         for kw in sig.get("org_keywords", []):
             if kw in org_lower or kw in combined:
+                org_hit = True
                 confidence = max(confidence, 0.75)
+        if sig.get("require_org_keyword") and not org_hit:
+            confidence = min(confidence, 0.35)
         for kw in sig.get("cname_keywords", []):
             if kw in combined:
                 confidence = max(confidence, 0.70)

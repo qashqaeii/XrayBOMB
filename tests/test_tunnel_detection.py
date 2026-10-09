@@ -120,7 +120,7 @@ def test_arvan_http_cdn_and_direct_xray_not_reverse_proxy():
     )
     ids = {t.tunnel_id for t in result.detected_types}
     assert "arvan_cdn" in ids
-    assert "direct_xray_inbound" in ids
+    assert "direct_xray_inbound" not in ids
     assert "reverse_proxy" not in ids
     arvan = next(t for t in result.detected_types if t.tunnel_id == "arvan_cdn")
     assert arvan.confidence >= 0.85

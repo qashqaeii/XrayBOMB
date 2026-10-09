@@ -341,6 +341,8 @@ def analyze_deployment(
         result.cdn_backend_ips = [ip.ip for ip in cdn_ips]
     elif http_cdn and dns.a_records:
         result.cdn_backend_ips = list(dns.a_records[:4])
+    if result.cdn_backend_ips:
+        uncertain.append("CDN edge IPs (not origin/backend)")
     else:
         uncertain.append("IP Origin behind CDN")
         uncertain.append("CDN backend IPs")

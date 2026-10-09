@@ -359,7 +359,8 @@ def analyze_tunnels(
 
     # ── Direct Xray on public port (no nginx/caddy in Server header) ──
     proxy_ok = xray_test and xray_test.proxy_test == TestStatus.VALID
-    if proxy_ok and not connectivity.http_reverse_proxy:
+    has_cdn_edge = bool(cdn_ips or primary_cdn or deployment.cdn_type)
+    if proxy_ok and not connectivity.http_reverse_proxy and not has_cdn_edge:
         dx_conf = 0.62
         if connectivity.http_panel_detected:
             dx_conf = 0.78
