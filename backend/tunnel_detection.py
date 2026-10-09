@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+from typing import Optional  # noqa: F401 — used by analyze_tunnels
 
 from backend.models import (
     ConnectivityResult,
@@ -13,11 +13,13 @@ from backend.models import (
     IPIntelligence,
     ParsedConfig,
     ProtocolType,
+    TestStatus,
     TracerouteResult,
     TransportType,
     TunnelAnalysis,
     TunnelRoute,
     TunnelTypeMatch,
+    XrayTestResult,
 )
 from utils.helpers import is_ip_address
 
@@ -78,6 +80,11 @@ TUNNEL_CATALOG: dict[str, dict[str, str]] = {
         "name": "Reverse Proxy (Nginx/Caddy/HAProxy)",
         "flow": "Client → :443 Nginx → localhost:Xray",
         "explain": "Nginx/Caddy TLS termination or pass-through; forwards WebSocket/gRPC/XHTTP to Xray.",
+    },
+    "direct_xray_inbound": {
+        "name": "Direct Xray Inbound (public port)",
+        "flow": "Client → Xray :port (TLS/WS on 0.0.0.0 — no separate reverse proxy)",
+        "explain": "Xray listens directly on the public port (e.g. *:443). Common with 3x-ui/Marzban without Nginx.",
     },
     "reverse_tunnel_frp": {
         "name": "Reverse Tunnel (frp/nps/ngrok)",
@@ -227,6 +234,7 @@ def analyze_tunnels(
     deployment: DeploymentAnalysis,
     traceroute: TracerouteResult,
     tunnel: TunnelRoute,
+    xray_test: Optional[XrayTestResult] = None,
 ) -> TunnelAnalysis:
     """Detect all applicable tunnel types with evidence from analysis."""
     matches: list[TunnelTypeMatch] = []
@@ -276,13 +284,23 @@ def analyze_tunnels(
         if ip.cdn_detected and ip.cdn_confidence >= 0.55:
             detected_cdns.add(ip.cdn_detected)
 
-    if cdn_ips or primary_cdn or detected_cdns:
+    http_cdn = connectivity.http_cdn_detected
+    if http_cdn:
+        detected_cdns.add(http_cdn)
+        if not primary_cdn:
+            primary_cdn = http_cdn
+
+    if cdn_ips or primary_cdn or detected_cdns or http_cdn:
         cdn_conf = 0.55
         if cdn_ips:
             cdn_conf = min(0.95, max(ip.cdn_confidence for ip in cdn_ips) + 0.05)
-        ev = [f"cdn_type={primary_cdn or '—'}"]
+        ev = [f"cdn_type={primary_cdn or http_cdn or '—'}"]
+        if connectivity.http_server_header:
+            ev.append(f"http_server={connectivity.http_server_header}")
         if deployment.cdn_backend_ips:
             ev.append(f"cdn_ips={', '.join(deployment.cdn_backend_ips[:4])}")
+        elif dns.a_records:
+            ev.append(f"dns_a={', '.join(dns.a_records[:4])}")
         if is_ip_address(c.address) and c.sni:
             ev.append(f"link_ip={c.address} + sni={c.sni}")
         matches.append(_match("cdn_fronting", cdn_conf, ev,
@@ -339,12 +357,31 @@ def analyze_tunnels(
                 steps.append(f"ISP: {net.organization or net.isp} ({net.asn or '—'})")
             matches.append(_match("direct_vps", vps_conf, ev, steps))
 
-    # ── Reverse Proxy ──
+    # ── Direct Xray on public port (no nginx/caddy in Server header) ──
+    proxy_ok = xray_test and xray_test.proxy_test == TestStatus.VALID
+    if proxy_ok and not connectivity.http_reverse_proxy:
+        dx_conf = 0.62
+        if connectivity.http_panel_detected:
+            dx_conf = 0.78
+        ev = ["xray_proxy_test=VALID", "no_nginx/caddy_in_Server_header"]
+        if connectivity.http_panel_detected:
+            ev.append(f"panel={connectivity.http_panel_detected}")
+        steps = [
+            f"Xray listens on *:{c.port} (direct inbound — common with {connectivity.http_panel_detected or '3x-ui/Marzban'})",
+            "No separate Nginx/Caddy layer detected from HTTP fingerprint",
+        ]
+        matches.append(_match("direct_xray_inbound", dx_conf, ev, steps))
+
+    # ── Reverse Proxy — requires nginx/caddy/apache in Server header ──
     rp_conf = next((g.confidence for g in deployment.guesses if g.name == "Reverse Proxy"), 0.0)
-    if transport in (TransportType.WS, TransportType.XHTTP, TransportType.GRPC, TransportType.HTTPUPGRADE):
-        rp_conf = max(rp_conf, 0.50)
-    if connectivity.http_response.value == "Valid":
-        rp_conf = max(rp_conf, 0.65)
+    if connectivity.http_reverse_proxy:
+        rp_conf = max(rp_conf, 0.72)
+    elif transport in (TransportType.WS, TransportType.XHTTP, TransportType.GRPC, TransportType.HTTPUPGRADE):
+        rp_conf = max(rp_conf, 0.35)
+    if http_cdn and not connectivity.http_reverse_proxy:
+        rp_conf = min(rp_conf, 0.30)
+    if proxy_ok and not connectivity.http_reverse_proxy:
+        rp_conf = min(rp_conf, 0.28)
     if rp_conf >= 0.45:
         ev = [f"transport={transport.value}", f"rp_heuristic={int(rp_conf * 100)}%"]
         if connectivity.http_response.value != "Pending":

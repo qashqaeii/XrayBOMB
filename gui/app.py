@@ -30,6 +30,7 @@ from gui.components.sidebar import Sidebar
 from gui.components.status_panel import StatusPanel
 from gui.components.toast import ToastNotification
 from gui.tabs.analysis_tabs import AnalysisTabs
+from gui.tools.tools_modals import open_tools_launcher
 from reports.exporter import BatchReportExporter, ReportExporter
 from utils.branding import developer_credit
 from utils.logger import setup_logging, get_logger
@@ -83,7 +84,7 @@ class XrayAnalyzerApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self) -> None:
-        toolbar = ctk.CTkFrame(self, height=44, fg_color=TOOLBAR_BG, corner_radius=0)
+        toolbar = ctk.CTkFrame(self, height=56, fg_color=TOOLBAR_BG, corner_radius=0)
         toolbar.pack(fill="x")
         toolbar.pack_propagate(False)
 
@@ -100,6 +101,21 @@ class XrayAnalyzerApp(ctk.CTk):
         ).pack(side="left")
 
         ctk.CTkButton(toolbar, text="⚙ Settings", width=90, command=self._open_settings).pack(side="right", padx=5, pady=5)
+
+        self.tools_btn = ctk.CTkButton(
+            toolbar,
+            text="🔧  Network Tools",
+            width=180,
+            height=40,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            command=self._open_tools,
+            fg_color="#0077bb",
+            hover_color="#0099dd",
+            border_width=2,
+            border_color="#00ccff",
+            corner_radius=8,
+        )
+        self.tools_btn.pack(side="right", padx=10, pady=8)
 
         export_menu = ctk.CTkOptionMenu(
             toolbar,
@@ -137,7 +153,7 @@ class XrayAnalyzerApp(ctk.CTk):
         left_col = ctk.CTkFrame(content, fg_color="transparent")
         left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         left_col.grid_columnconfigure(0, weight=1)
-        left_col.grid_rowconfigure(0, weight=LEFT_CONFIG_HISTORY_RATIO[0], minsize=240)
+        left_col.grid_rowconfigure(0, weight=LEFT_CONFIG_HISTORY_RATIO[0], minsize=310)
         left_col.grid_rowconfigure(1, weight=LEFT_CONFIG_HISTORY_RATIO[1], minsize=HISTORY_MIN_HEIGHT)
 
         self.sidebar = Sidebar(
@@ -156,7 +172,13 @@ class XrayAnalyzerApp(ctk.CTk):
         self.batch_panel = BatchResultsPanel(center, on_select=self._select_batch_result, height=72)
         self.batch_panel.grid(row=0, column=0, sticky="ew", pady=(0, 4))
 
-        self.tabs = AnalysisTabs(center)
+        self.tabs = AnalysisTabs(
+            center,
+            on_copy_all_done=lambda ok: self.toast.show(
+                "All tabs copied to clipboard" if ok else "No analysis data to copy",
+                color="#66cc99" if ok else "#ffaa44",
+            ),
+        )
         self.tabs.grid(row=1, column=0, sticky="nsew")
 
         self.status_panel = StatusPanel(content, width=STATUS_WIDTH)
@@ -187,6 +209,9 @@ class XrayAnalyzerApp(ctk.CTk):
             except Exception:
                 sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
                 self.geometry(f"{sw}x{sh}+0+0")
+
+    def _open_tools(self) -> None:
+        open_tools_launcher(self, on_log=self._log)
 
     def _log(self, msg: str) -> None:
         self.after(0, lambda: self.log_panel.log(msg))
@@ -353,7 +378,7 @@ class XrayAnalyzerApp(ctk.CTk):
 
         ctk.CTkButton(btn_row, text="Copy Link", command=copy_link, width=100).pack(side="left", padx=5)
         ctk.CTkButton(btn_row, text="Save PNG", command=save_png, width=100).pack(side="left", padx=5)
-        configure_modal(win, self)
+        configure_modal(win, self, modal=False)
 
     def _generate_config(self) -> None:
         if not self._result:
@@ -367,7 +392,7 @@ class XrayAnalyzerApp(ctk.CTk):
         tb.pack(fill="both", expand=True, padx=10, pady=10)
         bind_textbox_clipboard(tb, editable=False)
         tb.insert("1.0", cfg_json)
-        configure_modal(win, self)
+        configure_modal(win, self, modal=False)
 
     def _diff_configs(self) -> None:
         if not self._result:
@@ -386,7 +411,7 @@ class XrayAnalyzerApp(ctk.CTk):
         bind_textbox_clipboard(tb, editable=False)
         tb.insert("1.0", text)
         self._compare_result = None
-        configure_modal(win, self)
+        configure_modal(win, self, modal=False)
 
     def _cloud_sync(self) -> None:
         if not get_settings().cloud_sync_url:

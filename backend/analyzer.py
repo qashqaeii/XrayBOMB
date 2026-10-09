@@ -9,6 +9,7 @@ from backend.cert_transparency import lookup_cert_transparency
 from backend.cloud_sync import sync_upload
 from backend.config_parser import parse_input
 from backend.config_validator import validate_config
+from backend.config_optimizer import build_config_optimization
 from backend.deployment_guide import build_deployment_setup_guide
 from backend.intelligence import analyze_threats
 from backend.tunnel_detection import analyze_tunnels
@@ -28,6 +29,7 @@ from backend.security import (
     apply_traceroute_to_deployment,
     build_reproduction_guide,
 )
+from backend.stealth_assessment import assess_stealth
 from dns_analyzer.resolver import analyze_dns
 from network.cdn_detector import lookup_ip_intelligence
 from network.connectivity import run_connectivity_tests
@@ -178,13 +180,44 @@ class ConfigAnalyzer:
                 errors=["Xray-core binary not found in ~/.xray_analyzer/xray/"],
             )
 
+        exit_intel_dump: Optional[dict] = None
+        exit_ip_for_lookup = xray_result.exit_ip or xray_result.leak_check.proxy_exit_ip
+        if exit_ip_for_lookup:
+            try:
+                exit_intel_dump = (await lookup_ip_intelligence(exit_ip_for_lookup)).model_dump()
+                log(f"Exit IP intelligence: {exit_ip_for_lookup}")
+            except Exception as exc:
+                logger.debug("Exit IP lookup failed: %s", exc)
+
         tunnel_analysis = analyze_tunnels(
             config, dns_result, network_results, connectivity,
-            deployment, traceroute, tunnel,
+            deployment, traceroute, tunnel, xray_result,
         )
         setup_guide = build_deployment_setup_guide(
             config, deployment, tls_result, dns_result, network_results,
             connectivity, tunnel, traceroute, xray_result, tunnel_analysis,
+        )
+
+        optimization = build_config_optimization(
+            AnalysisResult(
+                config=config,
+                validation=validation,
+                dns=dns_result,
+                network=network_results,
+                connectivity=connectivity,
+                tls=tls_result,
+                deployment=deployment,
+                security=security,
+                reproduction=reproduction,
+                setup_guide=setup_guide,
+                xray_test=xray_result,
+                tunnel=tunnel,
+                tunnel_analysis=tunnel_analysis,
+                traceroute=traceroute,
+                threat_intel=threat_intel,
+                cert_transparency=cert_ct,
+                xray_installed=xray_installed,
+            )
         )
 
         result = AnalysisResult(
@@ -205,8 +238,10 @@ class ConfigAnalyzer:
             threat_intel=threat_intel,
             cert_transparency=cert_ct,
             xray_installed=xray_installed,
+            optimization=optimization,
             raw_data={},
         )
+        result = assess_stealth(result)
 
         stage(14, "Plugins")
         result = get_plugin_manager().run_hooks(result, config)
@@ -230,9 +265,16 @@ class ConfigAnalyzer:
             "threat_intel": [t.model_dump() for t in threat_intel],
             "cert_transparency": cert_ct.model_dump(),
             "xray_installed": xray_installed,
+            "optimization": optimization.model_dump(),
+            "dpi": result.dpi.model_dump(),
+            "camouflage": result.camouflage.model_dump(),
+            "origin_exposure": result.origin_exposure.model_dump(),
+            "confidence_calibration": result.confidence_calibration.model_dump(),
         }
         if plugin_data:
             result.raw_data["plugins"] = plugin_data
+        if exit_intel_dump:
+            result.raw_data["exit_intel"] = exit_intel_dump
 
         if settings.cloud_sync_url:
             await sync_upload(result)

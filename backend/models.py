@@ -87,6 +87,9 @@ class DNSAnalysis(BaseModel):
     all_resolved_ips: list[str] = Field(default_factory=list)
     dnssec: Optional[bool] = None
     doh_results: dict[str, list[str]] = Field(default_factory=dict)
+    local_resolver_ips: list[str] = Field(default_factory=list)
+    dns_split_detected: bool = False
+    dns_split_note: str = ""
     errors: list[str] = Field(default_factory=list)
 
 
@@ -201,6 +204,13 @@ class ConnectivityResult(BaseModel):
     packet_loss_percent: Optional[float] = None
     latency_benchmark: LatencyStats = Field(default_factory=LatencyStats)
     transport_tests: list[TransportTestResult] = Field(default_factory=list)
+    http_server_header: Optional[str] = None
+    http_cdn_detected: Optional[str] = None
+    http_panel_detected: Optional[str] = None
+    http_reverse_proxy: Optional[str] = None
+    http_probe_url: Optional[str] = None
+    http_probe_headers: dict[str, str] = Field(default_factory=dict)
+    websocket_upgrade_note: str = ""
     errors: list[str] = Field(default_factory=list)
 
 
@@ -220,10 +230,88 @@ class TLSAnalysis(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class ConfidenceLevel(str, Enum):
+    """Evidence strength for a conclusion (ordered strongest → weakest)."""
+
+    PROVEN = "Proven"
+    STRONG = "Strong Evidence"
+    WEAK = "Weak Evidence"
+    SPECULATIVE = "Speculative"
+
+    # Legacy aliases — kept for deserialized snapshots / external tools
+    CONFIRMED = "Proven"
+    LIKELY = "Strong Evidence"
+
+
+class RiskFactor(BaseModel):
+    """Scored factor with evidence and calibrated confidence."""
+
+    title: str
+    description: str
+    impact: int = 0
+    confidence: ConfidenceLevel = ConfidenceLevel.WEAK
+    evidence: list[str] = Field(default_factory=list)
+
+
+class DPIDetectabilityReport(BaseModel):
+    """Resistance to DPI fingerprinting (higher = stealthier, harder to block)."""
+
+    score: Optional[int] = None
+    grade: str = "—"
+    detection_risk: str = "unknown"
+    summary: str = ""
+    factors: list[RiskFactor] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+class TrafficCamouflageReport(BaseModel):
+    """How closely traffic mimics legitimate HTTPS (higher = more natural)."""
+
+    score: Optional[int] = None
+    grade: str = "—"
+    naturalness: str = "unknown"
+    summary: str = ""
+    layers: list[RiskFactor] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+class OriginExposureReport(BaseModel):
+    """Likelihood the real origin IP is discoverable (higher = more exposed)."""
+
+    risk_score: Optional[int] = None
+    exposure_level: str = "unknown"
+    grade: str = "—"
+    summary: str = ""
+    inferred_origin_ip: Optional[str] = None
+    factors: list[RiskFactor] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+
+
+class CalibratedInsight(BaseModel):
+    """A conclusion with explicit evidence tier."""
+
+    category: str
+    title: str
+    description: str
+    confidence: ConfidenceLevel = ConfidenceLevel.WEAK
+    evidence: list[str] = Field(default_factory=list)
+    raw_confidence: float = 0.0
+    calibrated_confidence: float = 0.0
+
+
+class ConfidenceCalibrationReport(BaseModel):
+    """Central registry of evidence-calibrated conclusions."""
+
+    summary: str = ""
+    insights: list[CalibratedInsight] = Field(default_factory=list)
+
+
 class DeploymentGuess(BaseModel):
     name: str
     confidence: float
     description: str = ""
+    confidence_level: ConfidenceLevel = ConfidenceLevel.WEAK
+    calibrated_confidence: float = 0.0
 
 
 class DeploymentAnalysis(BaseModel):
@@ -244,6 +332,8 @@ class TunnelTypeMatch(BaseModel):
     name: str
     category: str = ""
     confidence: float = 0.0
+    confidence_level: ConfidenceLevel = ConfidenceLevel.WEAK
+    calibrated_confidence: float = 0.0
     evidence: list[str] = Field(default_factory=list)
     traffic_flow: str = ""
     description: str = ""
@@ -256,6 +346,7 @@ class TunnelAnalysis(BaseModel):
     primary_type: str = ""
     primary_tunnel_id: str = ""
     primary_confidence: float = 0.0
+    primary_confidence_level: ConfidenceLevel = ConfidenceLevel.WEAK
     traffic_flow: str = ""
     detected_types: list[TunnelTypeMatch] = Field(default_factory=list)
 
@@ -311,6 +402,8 @@ class DeploymentSetupGuide(BaseModel):
     sections: list[SetupGuideSection] = Field(default_factory=list)
     checklist: list[str] = Field(default_factory=list)
     tips: list[str] = Field(default_factory=list)
+    how_to_run_sections: list[SetupGuideSection] = Field(default_factory=list)
+    how_to_run_text: str = ""
 
 
 class SiteReachabilityResult(BaseModel):
@@ -358,6 +451,77 @@ class XrayTestResult(BaseModel):
     exit_country: Optional[str] = None
 
 
+class OptimizationPriority(str, Enum):
+    CRITICAL = "critical"  # P1 — must fix before selling
+    HIGH = "high"          # P2 — strong impact on Iran filtering
+    MEDIUM = "medium"      # P3 — quality / stability
+    LOW = "low"            # P4 — polish
+    INFO = "info"          # P5 — optional
+
+
+class IPNodeScore(BaseModel):
+    """Ranked IP behind DNS for seller comparison."""
+
+    ip: str
+    score: int = 0
+    reputation: int = 50
+    tcp_ok: bool = False
+    tcp_latency_ms: Optional[float] = None
+    is_datacenter: bool = False
+    cdn: Optional[str] = None
+    country: Optional[str] = None
+    blocklist_hits: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class OptimizationAction(BaseModel):
+    priority: OptimizationPriority = OptimizationPriority.MEDIUM
+    priority_rank: int = 3
+    title: str
+    description: str
+    field: Optional[str] = None
+    current_value: Optional[str] = None
+    suggested_value: Optional[str] = None
+    score_gain: int = 0
+
+
+class OptimizedBlueprint(BaseModel):
+    """Suggested client/server fields derived from analysis — not a live server."""
+
+    protocol: str = ""
+    address: str = ""
+    port: int = 443
+    transport: str = ""
+    security: str = ""
+    flow: Optional[str] = None
+    sni: Optional[str] = None
+    host: Optional[str] = None
+    path: Optional[str] = None
+    fingerprint: Optional[str] = None
+    alpn: Optional[str] = None
+    service_name: Optional[str] = None
+    allow_insecure: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class ConfigOptimizationReport(BaseModel):
+    """Iran-focused optimization and seller readiness — priority-ordered."""
+
+    iran_score: int = 0
+    sell_readiness: int = 0
+    grade: str = "—"
+    verdict: str = ""
+    ip_rankings: list[IPNodeScore] = Field(default_factory=list)
+    best_ip: Optional[str] = None
+    actions: list[OptimizationAction] = Field(default_factory=list)
+    blueprint: OptimizedBlueprint = Field(default_factory=OptimizedBlueprint)
+    suggested_share_link: Optional[str] = None
+    server_recipe: list[str] = Field(default_factory=list)
+    delivery_checklist: list[str] = Field(default_factory=list)
+    support_message: str = ""
+    ideal_stack_summary: str = ""
+
+
 class AnalysisResult(BaseModel):
     """Complete analysis result."""
 
@@ -378,8 +542,69 @@ class AnalysisResult(BaseModel):
     threat_intel: list[ThreatIntel] = Field(default_factory=list)
     cert_transparency: CertTransparencyResult = Field(default_factory=CertTransparencyResult)
     xray_installed: bool = False
+    optimization: ConfigOptimizationReport = Field(default_factory=ConfigOptimizationReport)
+    dpi: DPIDetectabilityReport = Field(default_factory=DPIDetectabilityReport)
+    camouflage: TrafficCamouflageReport = Field(default_factory=TrafficCamouflageReport)
+    origin_exposure: OriginExposureReport = Field(default_factory=OriginExposureReport)
+    confidence_calibration: ConfidenceCalibrationReport = Field(default_factory=ConfidenceCalibrationReport)
     analyzed_at: datetime = Field(default_factory=datetime.now)
     raw_data: dict[str, Any] = Field(default_factory=dict)
+
+
+class CleanIPResult(BaseModel):
+    ip: str
+    score: int = 0
+    avg_ms: Optional[float] = None
+    p95_ms: Optional[float] = None
+    min_ms: Optional[float] = None
+    packet_loss_pct: float = 0.0
+    tls_ok: bool = False
+    blocklist_hits: list[str] = Field(default_factory=list)
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    isp: Optional[str] = None
+    notes: list[str] = Field(default_factory=list)
+
+
+class CleanIPFinderResult(BaseModel):
+    tool: str = "cloudflare_clean_ip"
+    region: str = ""
+    sni: str = ""
+    port: int = 443
+    scanned: int = 0
+    reachable: int = 0
+    results: list[CleanIPResult] = Field(default_factory=list)
+    best_ip: Optional[str] = None
+    best_score: Optional[int] = None
+    tips: list[str] = Field(default_factory=list)
+
+
+class ProviderBenchmarkResult(BaseModel):
+    provider: str
+    score: int = 0
+    host: Optional[str] = None
+    ip: Optional[str] = None
+    avg_ms: Optional[float] = None
+    p95_ms: Optional[float] = None
+    min_ms: Optional[float] = None
+    packet_loss_pct: float = 0.0
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    asn_hint: str = ""
+    iran_notes: str = ""
+    blocklist_hits: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class DatacenterFinderResult(BaseModel):
+    tool: str = "datacenter_finder"
+    country: str = ""
+    country_code: str = ""
+    port: int = 443
+    results: list[ProviderBenchmarkResult] = Field(default_factory=list)
+    winner: Optional[str] = None
+    winner_score: Optional[int] = None
+    tips: list[str] = Field(default_factory=list)
 
 
 class BatchAnalysisResult(BaseModel):

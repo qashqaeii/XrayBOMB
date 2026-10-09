@@ -8,6 +8,8 @@ import customtkinter as ctk
 
 from gui.components.clipboard_bindings import bind_textbox_clipboard
 from utils.country import apply_flag_emoji_tags
+from utils.persian_text import split_persian_lines
+from utils.ui_theme import monospace_font_family, persian_font_family
 
 
 class CopyableTextbox(ctk.CTkFrame):
@@ -26,16 +28,21 @@ class CopyableTextbox(ctk.CTkFrame):
         self._rtl = rtl
 
         if show_toolbar:
-            toolbar = ctk.CTkFrame(self, fg_color="transparent", height=28)
-            toolbar.pack(fill="x", padx=2, pady=(0, 2))
-            ctk.CTkButton(toolbar, text="📋 Copy", width=72, height=24, command=self.copy_selection).pack(side="left", padx=2)
-            ctk.CTkButton(toolbar, text="Copy All", width=72, height=24, command=self.copy_all).pack(side="left", padx=2)
-            ctk.CTkButton(toolbar, text="Select All", width=72, height=24, command=self.select_all).pack(side="left", padx=2)
+            toolbar = ctk.CTkFrame(self, fg_color="transparent", height=24)
+            toolbar.pack(fill="x", padx=4, pady=(4, 2))
+            btn_kw = dict(height=22, font=ctk.CTkFont(size=11), fg_color="transparent", hover_color="#252545")
+            ctk.CTkButton(toolbar, text="Copy", width=56, command=self.copy_selection, **btn_kw).pack(side="left", padx=(0, 2))
+            ctk.CTkButton(toolbar, text="All", width=40, command=self.copy_all, **btn_kw).pack(side="left", padx=2)
+            ctk.CTkButton(toolbar, text="Select", width=52, command=self.select_all, **btn_kw).pack(side="left", padx=2)
 
         self._font_size = 12
+        self._font_family = "Consolas"
         font_kw = kwargs.get("font")
         if isinstance(font_kw, ctk.CTkFont):
             self._font_size = font_kw.cget("size") or 12
+            family = font_kw.cget("family")
+            if family:
+                self._font_family = family
 
         self.textbox = ctk.CTkTextbox(self, **kwargs)
         self.textbox.pack(fill="both", expand=True)
@@ -48,7 +55,11 @@ class CopyableTextbox(ctk.CTkFrame):
         self._ctx_menu.add_command(label="Copy", command=self.copy_selection)
         self._ctx_menu.add_command(label="Copy All", command=self.copy_all)
         self._ctx_menu.add_command(label="Select All", command=self.select_all)
+        if not read_only:
+            self._ctx_menu.add_separator()
+            self._ctx_menu.add_command(label="Paste", command=self.paste_clipboard)
         self.textbox.bind("<Button-3>", self._show_context_menu)
+        self.textbox.bind("<Control-a>", lambda _e: (self.select_all(), "break"))
 
     def _make_read_only(self) -> None:
         inner = self.textbox._textbox
@@ -72,20 +83,49 @@ class CopyableTextbox(ctk.CTkFrame):
     def get_text(self) -> str:
         return self.textbox.get("1.0", "end-1c")
 
-    def _prepare_rtl_content(self, content: str) -> str:
-        """Prefix lines with RLM so Persian renders right-to-left in Tk."""
-        rlm = "\u200f"
-        return "\n".join(f"{rlm}{line}" if line.strip() else line for line in content.split("\n"))
-
     def set_text(self, content: str) -> None:
         self.textbox.delete("1.0", "end")
         inner = self.textbox._textbox
         if self._rtl:
-            inner.tag_configure("rtl", justify="right")
-            inner.insert("1.0", self._prepare_rtl_content(content), "rtl")
+            persian = self._font_family or persian_font_family()
+            mono = monospace_font_family()
+            inner.tag_configure(
+                "rtl",
+                justify="right",
+                font=(persian, self._font_size),
+                lmargin1=8,
+                lmargin2=8,
+                rmargin=8,
+            )
+            inner.tag_configure(
+                "ltr",
+                justify="left",
+                font=(mono, self._font_size),
+                lmargin1=8,
+                lmargin2=8,
+                rmargin=8,
+            )
+            for display, tag in split_persian_lines(content):
+                inner.insert("end", display + "\n", tag)
         else:
             self.textbox.insert("1.0", content)
         apply_flag_emoji_tags(inner, size=self._font_size)
+
+    def append_text(self, content: str, *, max_chars: int = 500_000, tag_flags: bool = True) -> None:
+        """Append without rebuilding the whole buffer (terminal streaming)."""
+        if not content:
+            return
+        inner = self.textbox._textbox
+        inner.insert("end", content)
+        if tag_flags:
+            apply_flag_emoji_tags(inner, size=self._font_size)
+        if max_chars > 0:
+            total = int(inner.index("end-1c").split(".")[0])
+            if total > max_chars:
+                trim = total - int(max_chars * 0.85)
+                inner.delete("1.0", f"{trim}.0")
+                inner.insert("1.0", "… earlier output trimmed …\n\n")
+        inner.see("end")
 
     def copy_selection(self) -> None:
         try:
@@ -103,6 +143,18 @@ class CopyableTextbox(ctk.CTkFrame):
         if text:
             self.clipboard_clear()
             self.clipboard_append(text)
+
+    def paste_clipboard(self) -> None:
+        if self._read_only:
+            return
+        try:
+            text = self.clipboard_get()
+            inner = self.textbox._textbox
+            if inner.tag_ranges("sel"):
+                inner.delete("sel.first", "sel.last")
+            inner.insert("insert", text)
+        except Exception:
+            pass
 
     def select_all(self) -> None:
         self.textbox.tag_add("sel", "1.0", "end")

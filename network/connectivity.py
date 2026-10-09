@@ -12,6 +12,7 @@ import httpx
 import websocket
 
 from backend.models import ConnectivityResult, ParsedConfig, TestStatus, TransportType
+from network.http_probe import probe_http_fingerprint
 from network.latency_benchmark import benchmark_tcp_latency
 from network.transport_tests import run_transport_tests
 from utils.helpers import is_ip_address
@@ -169,7 +170,10 @@ async def run_connectivity_tests(config: ParsedConfig) -> ConnectivityResult:
     if config.transport_type == TransportType.WS:
         result.websocket_upgrade = await test_websocket_upgrade(host, port, config.path or "/", sni)
         if result.websocket_upgrade == TestStatus.INVALID:
-            result.errors.append("WebSocket upgrade failed")
+            result.websocket_upgrade_note = (
+                "Generic WS handshake to VLESS path failed — expected if path requires "
+                "Xray client protocol (not proof the tunnel is broken)."
+            )
     else:
         result.websocket_upgrade = TestStatus.SKIPPED
 
@@ -189,6 +193,21 @@ async def run_connectivity_tests(config: ParsedConfig) -> ConnectivityResult:
         result.latency_benchmark = await benchmark_tcp_latency(connect_host, port)
 
     result.http_response, result.http_status_code = await test_http_response(connect_host, port, sni)
+
+    if not is_ip_address(host):
+        fp = await probe_http_fingerprint(
+            host, port, config.path or "/", sni=sni or host,
+        )
+        result.http_probe_url = fp.get("url")
+        result.http_server_header = fp.get("http_server")
+        result.http_cdn_detected = fp.get("cdn_detected")
+        result.http_panel_detected = fp.get("panel_detected")
+        result.http_reverse_proxy = fp.get("reverse_proxy_server")
+        result.http_probe_headers = fp.get("headers") or {}
+        if fp.get("status_code") and result.http_response == TestStatus.PENDING:
+            sc = fp["status_code"]
+            result.http_response = TestStatus.VALID if sc < 500 else TestStatus.WARNING
+            result.http_status_code = sc
 
     latencies = [v for v in [result.dns_latency_ms, result.tcp_latency_ms, result.tls_latency_ms] if v is not None]
     if latencies:

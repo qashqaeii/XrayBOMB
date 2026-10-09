@@ -751,7 +751,7 @@ def build_deployment_setup_guide(
 
     sections.append(SetupGuideSection(title="Manual Xray-core Install", steps=_manual_xray(ctx)))
 
-    return DeploymentSetupGuide(
+    guide = DeploymentSetupGuide(
         summary=_build_summary(ctx),
         detected_scenario=scenario,
         scenario_confidence=conf,
@@ -761,3 +761,5 @@ def build_deployment_setup_guide(
         checklist=_build_checklist(ctx),
         tips=_build_tips(ctx),
     )
+    from backend.how_to_run import attach_how_to_run
+    return attach_how_to_run(guide, ctx)

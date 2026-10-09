@@ -48,13 +48,22 @@ class BatchResultsPanel(ctk.CTkFrame):
         err = len(batch.errors)
         self.info_label.configure(text=f"{ok} analyzed, {err} errors (of {batch.total} configs)")
 
-        for i, result in enumerate(batch.results):
+        ranked = sorted(
+            batch.results,
+            key=lambda r: (r.optimization.iran_score, r.optimization.sell_readiness),
+            reverse=True,
+        )
+        for i, result in enumerate(ranked):
             c = result.config
-            score = result.security.score
-            color = "#00cc66" if score >= 80 else "#ffaa00" if score >= 50 else "#ff4444"
-            tls = "TLS" if c.tls else "noTLS"
+            iran = result.optimization.iran_score
+            sell = result.optimization.sell_readiness
+            color = "#00cc66" if iran >= 70 else "#ffaa00" if iran >= 45 else "#ff4444"
+            tls = "R" if c.reality else ("TLS" if c.tls else "—")
             cdn = result.deployment.cdn_type or "—"
-            text = f"{i + 1}. {c.protocol.value} {c.address}:{c.port} | {score}/100 | {tls} | CDN:{cdn}"
+            text = (
+                f"#{i + 1} {c.protocol.value} {c.address}:{c.port} | "
+                f"IR:{iran} Sell:{sell}% {result.optimization.grade} | {tls} | CDN:{cdn}"
+            )
             ctk.CTkButton(
                 self.scroll, text=text, anchor="w", height=24,
                 fg_color="#1a1a2e", hover_color="#2a2a4e", text_color=color,

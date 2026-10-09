@@ -146,6 +146,30 @@ class ReportExporter:
         for rec in r.security.recommendations:
             lines.append(f"- **{rec.title}** (+{rec.score_impact}): {rec.description}")
 
+        o = r.optimization
+        lines.extend([
+            "",
+            "## Iran Optimizer / Seller Readiness",
+            "",
+            f"- Iran Score: **{o.iran_score}/100** (Grade {o.grade})",
+            f"- Sell Readiness: **{o.sell_readiness}%**",
+            f"- Verdict: {o.verdict}",
+            f"- Ideal stack: {o.ideal_stack_summary}",
+            "",
+        ])
+        if o.ip_rankings:
+            lines.append("### IP Rankings")
+            for node in o.ip_rankings:
+                lines.append(f"- {node.ip}: score={node.score}, reputation={node.reputation}")
+        lines.append("### Priority Actions")
+        for act in o.actions[:15]:
+            lines.append(f"- [P{act.priority_rank}] **{act.title}**: {act.description}")
+        if o.suggested_share_link:
+            lines.extend(["", "### Suggested Share Link", "", f"```\n{o.suggested_share_link}\n```"])
+        lines.append("### Delivery Checklist")
+        for item in o.delivery_checklist:
+            lines.append(f"- {item}")
+
         lines.extend(["", "## Deployment", ""])
         for g in r.deployment.guesses[:5]:
             lines.append(f"- {g.name}: {g.confidence * 100:.0f}%")

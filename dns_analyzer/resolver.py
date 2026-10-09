@@ -98,9 +98,26 @@ async def analyze_dns(hostname: str) -> DNSAnalysis:
     result.mx_records = mx_records
     result.txt_records = txt_records
     result.ttl = a_ttl or aaaa_ttl
-    result.all_resolved_ips = a_records + aaaa_records
+    result.local_resolver_ips = list(a_records)
     result.dnssec = await _check_dnssec(hostname)
     result.doh_results = await _doh_lookup(hostname)
+
+    # Union all resolver sources — CDN detection must not rely on a single resolver view
+    all_ipv4: list[str] = list(dict.fromkeys(a_records))
+    for ips in result.doh_results.values():
+        for ip in ips:
+            if ip and ":" not in ip and ip not in all_ipv4:
+                all_ipv4.append(ip)
+    result.all_resolved_ips = all_ipv4 + aaaa_records
+
+    local_set = set(a_records)
+    doh_union = {ip for ips in result.doh_results.values() for ip in ips if ":" not in ip}
+    if local_set and doh_union and local_set != doh_union:
+        result.dns_split_detected = True
+        result.dns_split_note = (
+            f"Local A: {', '.join(a_records) or 'none'} | "
+            f"DoH: {', '.join(sorted(doh_union))} — geo/split DNS likely"
+        )
 
     if not result.all_resolved_ips:
         result.errors.append(f"No A/AAAA records found for {hostname}")

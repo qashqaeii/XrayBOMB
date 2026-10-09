@@ -64,7 +64,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ).pack(anchor="w", padx=12, pady=(0, 10))
 
         ctk.CTkButton(self, text="Save", command=self._save, fg_color="#0066cc").pack(pady=10)
-        configure_modal(self, master)
+        configure_modal(self, master, on_close=self.destroy, modal=True)
 
     def _add_switch(self, parent, label: str, key: str) -> None:
         var = ctk.BooleanVar(value=getattr(self.settings, key))

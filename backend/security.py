@@ -197,6 +197,20 @@ def analyze_deployment(
     has_cname = bool(dns.cname_records)
     is_direct_ip = is_ip_address(config.address)
 
+    http_cdn = connectivity.http_cdn_detected
+    if http_cdn and not any(ip.cdn_detected == http_cdn for ip in cdn_ips):
+        from backend.models import IPIntelligence
+        if network:
+            boosted = network[0].model_copy(update={
+                "cdn_detected": http_cdn,
+                "cdn_confidence": max(network[0].cdn_confidence, 0.88),
+            })
+            cdn_ips = list(cdn_ips) + [boosted]
+        else:
+            cdn_ips = list(cdn_ips) + [
+                IPIntelligence(ip=config.address, cdn_detected=http_cdn, cdn_confidence=0.88),
+            ]
+
     # Direct VPS
     vps_conf = 0.25
     if is_direct_ip and not cdn_ips:
@@ -211,12 +225,15 @@ def analyze_deployment(
     # CDN Fronted
     cdn_conf = 0.10
     cdn_type = None
+    if http_cdn:
+        cdn_type = http_cdn
+        cdn_conf = 0.88
     if cdn_ips:
         best = max(cdn_ips, key=lambda x: x.cdn_confidence)
-        cdn_conf = min(0.95, best.cdn_confidence + 0.1)
-        cdn_type = best.cdn_detected
+        cdn_conf = min(0.95, max(cdn_conf, best.cdn_confidence + 0.1))
+        cdn_type = cdn_type or best.cdn_detected
     elif has_cname:
-        cdn_conf = 0.55
+        cdn_conf = max(cdn_conf, 0.55)
     if config.sni and config.sni != config.address:
         cdn_conf = min(0.95, cdn_conf + 0.15)
     guesses.append(DeploymentGuess(
@@ -237,7 +254,9 @@ def analyze_deployment(
 
     # Arvan CDN
     arvan_conf = 0.10
-    if any(ip.cdn_detected == "ArvanCloud" for ip in network):
+    if http_cdn == "ArvanCloud" or connectivity.http_server_header and "arvan" in connectivity.http_server_header.lower():
+        arvan_conf = 0.92
+    elif any(ip.cdn_detected == "ArvanCloud" for ip in network):
         arvan_conf = 0.90
     elif any("arvan" in r.lower() for r in dns.cname_records + dns.reverse_dns):
         arvan_conf = 0.75
@@ -262,15 +281,19 @@ def analyze_deployment(
             description=f"{cdn_label} CDN fronting detected from IP/ASN.",
         ))
 
-    # Reverse Proxy
+    # Reverse Proxy — only when HTTP Server header shows nginx/caddy (not CDN edge alone)
     rp_conf = 0.30
     transport = config.transport_type.value
     if config.extra.get("type") == "xhttp":
         transport = "XHTTP"
     if transport in ("WebSocket", "gRPC", "HTTPUpgrade", "XHTTP"):
-        rp_conf = 0.55
-    if connectivity.http_response.value == "Valid":
-        rp_conf = min(0.85, rp_conf + 0.20)
+        rp_conf = 0.40
+    if connectivity.http_reverse_proxy:
+        rp_conf = min(0.85, rp_conf + 0.35)
+    elif connectivity.http_response.value == "Valid" and not http_cdn:
+        rp_conf = min(0.55, rp_conf + 0.10)
+    if http_cdn and not connectivity.http_reverse_proxy:
+        rp_conf = min(rp_conf, 0.35)
     guesses.append(DeploymentGuess(
         name="Reverse Proxy", confidence=rp_conf,
         description="Nginx/Caddy/HAProxy reverse proxy likely in use.",
@@ -316,6 +339,8 @@ def analyze_deployment(
 
     if cdn_ips:
         result.cdn_backend_ips = [ip.ip for ip in cdn_ips]
+    elif http_cdn and dns.a_records:
+        result.cdn_backend_ips = list(dns.a_records[:4])
     else:
         uncertain.append("IP Origin behind CDN")
         uncertain.append("CDN backend IPs")

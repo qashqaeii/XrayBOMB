@@ -53,6 +53,87 @@ def mask_sensitive(value: Optional[str], visible: int = 4) -> str:
     return value[:visible] + "*" * (len(value) - visible * 2) + value[-visible:]
 
 
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
+)
+_OSC_ESCAPE_RE = re.compile(r"\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)")
+# CSI without ESC (common when xterm sequences are split or ESC is dropped)
+_CSI_ORPHAN_RE = re.compile(r"\[[\?0-9][0-9;]*[ -/]*[@-~a-zA-Z]")
+
+
+def strip_ansi(text: str) -> str:
+    """Remove terminal escape sequences for plain-text UI display."""
+    text = _OSC_ESCAPE_RE.sub("", text)
+    text = _ANSI_ESCAPE_RE.sub("", text)
+    text = _CSI_ORPHAN_RE.sub("", text)
+    return text
+
+
+def normalize_terminal_text(text: str) -> str:
+    """Turn CR-separated segments into lines (keep output before prompt redraws)."""
+    if "\r" not in text:
+        return text
+    out_lines: list[str] = []
+    for line in text.split("\n"):
+        if "\r" in line:
+            out_lines.extend(seg for seg in line.split("\r") if seg)
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def clean_terminal_chunk(text: str) -> str:
+    """ANSI strip + CR normalization for plain-text terminal widgets."""
+    return normalize_terminal_text(strip_ansi(text))
+
+
+_SHELL_PROMPT_TAIL_RE = re.compile(r"[#$]\s*$")
+
+
+class TerminalOutputBuffer:
+    """Reassemble SSH stream chunks so prompts start on a new line."""
+
+    def __init__(self) -> None:
+        self._pending = ""
+
+    def clear(self) -> None:
+        self._pending = ""
+
+    def feed(self, chunk: str) -> str:
+        if not chunk:
+            return ""
+        if self._pending and not self._pending.endswith("\n") and not chunk.startswith("\n"):
+            chunk = "\n" + chunk
+        work = clean_terminal_chunk(self._pending + chunk)
+        self._pending = ""
+        if not work:
+            return ""
+        if work.endswith("\n"):
+            return work
+        last_nl = work.rfind("\n")
+        if last_nl >= 0:
+            self._pending = work[last_nl + 1 :]
+            out = work[: last_nl + 1]
+            out += self._flush_prompt_line()
+            return out
+        self._pending = work
+        return self._flush_prompt_line()
+
+    def _flush_prompt_line(self) -> str:
+        if self._pending and _SHELL_PROMPT_TAIL_RE.search(self._pending):
+            line = self._pending if self._pending.endswith("\n") else self._pending + "\n"
+            self._pending = ""
+            return line
+        return ""
+
+    def flush(self) -> str:
+        if not self._pending:
+            return ""
+        line = self._pending if self._pending.endswith("\n") else self._pending + "\n"
+        self._pending = ""
+        return line
+
+
 def try_parse_json(text: str) -> Optional[Any]:
     """Attempt JSON parse, return None on failure."""
     try:

@@ -77,3 +77,50 @@ def test_reality_tunnel_detected():
         DeploymentAnalysis(), TracerouteResult(), TunnelRoute(),
     )
     assert any(t.tunnel_id == "reality_camouflage" for t in result.detected_types)
+
+
+def test_arvan_http_cdn_and_direct_xray_not_reverse_proxy():
+    from backend.models import XrayTestResult
+
+    config = ParsedConfig(
+        protocol=ProtocolType.VLESS,
+        address="vip.hushi.ir",
+        port=443,
+        uuid="x",
+        tls=True,
+        sni="vip.hushi.ir",
+        path="/WS",
+        transport_type=TransportType.WS,
+    )
+    dns = DNSAnalysis(
+        hostname="vip.hushi.ir",
+        a_records=["178.83.46.253"],
+        all_resolved_ips=["178.83.46.253", "185.143.233.234"],
+        dns_split_detected=True,
+    )
+    network = [
+        IPIntelligence(ip="185.143.233.234", cdn_detected="ArvanCloud", cdn_confidence=0.9),
+        IPIntelligence(ip="178.83.46.253", country_code="US"),
+    ]
+    conn = ConnectivityResult(
+        http_server_header="ArvanCloud",
+        http_cdn_detected="ArvanCloud",
+        http_panel_detected="3x-ui",
+        websocket_upgrade=TestStatus.INVALID,
+    )
+    deployment = DeploymentAnalysis(
+        cdn_type="ArvanCloud",
+        cdn_backend_ips=["185.143.233.234"],
+        guesses=[DeploymentGuess(name="Arvan CDN", confidence=0.92, description="")],
+    )
+    xray = XrayTestResult(proxy_test=TestStatus.VALID, exit_ip="178.83.46.253", exit_country="US")
+
+    result = analyze_tunnels(
+        config, dns, network, conn, deployment, TracerouteResult(), TunnelRoute(), xray,
+    )
+    ids = {t.tunnel_id for t in result.detected_types}
+    assert "arvan_cdn" in ids
+    assert "direct_xray_inbound" in ids
+    assert "reverse_proxy" not in ids
+    arvan = next(t for t in result.detected_types if t.tunnel_id == "arvan_cdn")
+    assert arvan.confidence >= 0.85
