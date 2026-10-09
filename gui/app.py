@@ -33,6 +33,7 @@ from gui.tabs.analysis_tabs import AnalysisTabs
 from gui.tools.tools_modals import open_tools_launcher
 from reports.exporter import BatchReportExporter, ReportExporter
 from utils.branding import developer_credit
+from utils.resources import app_logo_ico, app_logo_png
 from utils.logger import setup_logging, get_logger
 from utils.qrcode_gen import generate_qr_for_config, save_qr_png
 from utils.settings import get_settings, load_settings
@@ -74,7 +75,10 @@ class XrayAnalyzerApp(ctk.CTk):
         self._analyzing = False
         self._compare_result: Optional[AnalysisResult] = None
 
+        self._logo_image: Optional[ctk.CTkImage] = None
+        self._icon_photo = None
         self._build_ui()
+        self._apply_app_icon()
         self.update_idletasks()
         self._maximize_window()
         self._health_monitor = HealthMonitor(on_result=self._on_health_check)
@@ -83,15 +87,47 @@ class XrayAnalyzerApp(ctk.CTk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _apply_app_icon(self) -> None:
+        """Window / taskbar icon from Bomb.png (Windows prefers .ico)."""
+        try:
+            ico = app_logo_ico()
+            if ico.is_file():
+                self.iconbitmap(str(ico))
+                return
+            png_path = app_logo_png()
+            if png_path.is_file():
+                from PIL import Image, ImageTk
+
+                img = Image.open(png_path)
+                self._icon_photo = ImageTk.PhotoImage(img)
+                self.iconphoto(True, self._icon_photo)
+        except Exception as exc:
+            logger.debug("App icon not applied: %s", exc)
+
     def _build_ui(self) -> None:
         toolbar = ctk.CTkFrame(self, height=56, fg_color=TOOLBAR_BG, corner_radius=0)
         toolbar.pack(fill="x")
         toolbar.pack_propagate(False)
 
+        title_row = ctk.CTkFrame(toolbar, fg_color="transparent")
+        title_row.pack(side="left", padx=12)
+        png_path = app_logo_png()
+        if png_path.is_file():
+            from PIL import Image
+
+            pil_logo = Image.open(png_path)
+            self._logo_image = ctk.CTkImage(
+                light_image=pil_logo,
+                dark_image=pil_logo,
+                size=(40, 40),
+            )
+            ctk.CTkLabel(title_row, image=self._logo_image, text="").pack(side="left", padx=(0, 8))
         ctk.CTkLabel(
-            toolbar, text=f"⚡ {self.APP_TITLE}",
-            font=ctk.CTkFont(size=18, weight="bold"), text_color="#00d4ff",
-        ).pack(side="left", padx=15)
+            title_row,
+            text=self.APP_TITLE,
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#00d4ff",
+        ).pack(side="left")
 
         ctk.CTkLabel(
             toolbar,

@@ -12,9 +12,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "XrayConfigAnalyzerPro.spec"
+ENSURE_ICON = ROOT / "scripts" / "ensure_app_icon.py"
 DIST_DIR = ROOT / "dist" / "XrayConfigAnalyzerPro"
 RELEASE_DIR = ROOT / "release"
 ZIP_NAME = "XrayConfigAnalyzerPro-Windows-x64.zip"
+
+
+def _ensure_icon() -> None:
+    subprocess.check_call([sys.executable, str(ENSURE_ICON)], cwd=ROOT)
 
 
 def _run_pyinstaller() -> None:
@@ -23,6 +28,8 @@ def _run_pyinstaller() -> None:
     except ImportError:
         print("Installing PyInstaller...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller>=6.11.0", "pydantic>=2.6.0"])
+
+    _ensure_icon()
 
     subprocess.check_call(
         [

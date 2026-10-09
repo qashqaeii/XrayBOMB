@@ -6,6 +6,7 @@ from pathlib import Path
 
 block_cipher = None
 root = Path(SPECPATH)
+icon_file = root / "images" / "Bomb.ico"
 
 a = Analysis(
     [str(root / "main.py")],
@@ -13,6 +14,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(root / "plugins"), "plugins"),
+        (str(root / "images"), "images"),
     ],
     hiddenimports=[
         "customtkinter",
@@ -64,6 +66,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(icon_file) if icon_file.is_file() else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
