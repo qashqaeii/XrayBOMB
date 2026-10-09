@@ -96,15 +96,19 @@ def detect_cdn(
         confidence = 0.0
         if _ip_in_cidr(ip, CLOUDFLARE_CIDRS) and cdn_name == "Cloudflare":
             confidence = max(confidence, 0.85)
-        for asn_sig in sig.get("asns", []):
-            asn_sig_norm = asn_sig.upper().replace("AS", "")
-            if asn_norm and asn_norm == asn_sig_norm:
-                confidence = max(confidence, 0.55 if sig.get("require_org_keyword") else 0.90)
         org_hit = False
         for kw in sig.get("org_keywords", []):
             if kw in org_lower or kw in combined:
                 org_hit = True
                 confidence = max(confidence, 0.75)
+        for asn_sig in sig.get("asns", []):
+            asn_sig_norm = asn_sig.upper().replace("AS", "")
+            if asn_norm and asn_norm == asn_sig_norm:
+                if org_hit or any(kw in combined for kw in sig.get("cname_keywords", [])):
+                    confidence = max(confidence, 0.88 if not sig.get("require_org_keyword") else 0.75)
+                else:
+                    # ASN alone is not proof traffic traverses CDN edge
+                    confidence = max(confidence, 0.38 if sig.get("require_org_keyword") else 0.42)
         if sig.get("require_org_keyword") and not org_hit:
             confidence = min(confidence, 0.35)
         for kw in sig.get("cname_keywords", []):

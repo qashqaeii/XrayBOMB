@@ -95,6 +95,10 @@ class DNSAnalysis(BaseModel):
     local_resolver_ips: list[str] = Field(default_factory=list)
     dns_split_detected: bool = False
     dns_split_note: str = ""
+    ns_records: list[str] = Field(default_factory=list)
+    dns_provider: Optional[str] = None
+    dns_provider_confidence: float = 0.0
+    dns_provider_evidence: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 
 
@@ -217,6 +221,14 @@ class ConnectivityResult(BaseModel):
     http_reverse_proxy: Optional[str] = None
     http_probe_url: Optional[str] = None
     http_probe_headers: dict[str, str] = Field(default_factory=dict)
+    http_baseline_status: TestStatus = TestStatus.NOT_TESTED
+    http_baseline_status_code: Optional[int] = None
+    http_baseline_latency_ms: Optional[float] = None
+    http_baseline_headers: dict[str, str] = Field(default_factory=dict)
+    http_baseline_note: str = ""
+    websocket_handshake_status_code: Optional[int] = None
+    websocket_handshake_checks: list[str] = Field(default_factory=list)
+    websocket_handshake_validated: bool = False
     websocket_upgrade_note: str = ""
     errors: list[str] = Field(default_factory=list)
 
@@ -554,6 +566,30 @@ class ConfigOptimizationReport(BaseModel):
     ideal_stack_summary: str = ""
 
 
+class ArchitectureEvidenceLine(BaseModel):
+    """One line in Architecture Diagnostics (confirmed / probable / unknown)."""
+
+    label: str
+    status: str = "unknown"
+    detail: str = ""
+
+
+class ArchitectureDiagnosticsReport(BaseModel):
+    """Evidence-based architecture summary for GUI and exports."""
+
+    title: str = "Architecture Diagnostics"
+    endpoint: str = ""
+    connection_evidence: list[ArchitectureEvidenceLine] = Field(default_factory=list)
+    infrastructure: list[ArchitectureEvidenceLine] = Field(default_factory=list)
+    assessment_title: str = ""
+    assessment_summary: str = ""
+    positive_evidence: list[str] = Field(default_factory=list)
+    negative_evidence: list[str] = Field(default_factory=list)
+    unknowns: list[str] = Field(default_factory=list)
+    reproduction_client: list[str] = Field(default_factory=list)
+    reproduction_server_hints: list[str] = Field(default_factory=list)
+
+
 class AnalysisResult(BaseModel):
     """Complete analysis result."""
 
@@ -582,6 +618,9 @@ class AnalysisResult(BaseModel):
     test_environment: dict[str, Any] = Field(default_factory=dict)
     endpoint_targets: dict[str, Any] = Field(default_factory=dict)
     implementation_analysis: dict[str, Any] = Field(default_factory=dict)
+    architecture_diagnostics: ArchitectureDiagnosticsReport = Field(
+        default_factory=ArchitectureDiagnosticsReport,
+    )
     analyzed_at: datetime = Field(default_factory=datetime.now)
     raw_data: dict[str, Any] = Field(default_factory=dict)
 

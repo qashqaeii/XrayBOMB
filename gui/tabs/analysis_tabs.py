@@ -10,6 +10,7 @@ import customtkinter as ctk
 
 from backend.config_generator import generate_client_config_json
 from backend.config_optimizer import apply_optimization_to_config
+from backend.architecture_diagnostics import format_architecture_diagnostics_text
 from backend.result_summary import _format_edge_route, _get_exit_intel, build_result_summary
 from backend.stealth_assessment import format_risk_factors, format_score, score_bar
 from backend.e2e_validity import evaluate_xray_test_result
@@ -39,7 +40,8 @@ class AnalysisTabs(ctk.CTkFrame):
 
         self._tab_names = [
             "Dashboard", "Result", "Overview", "Best Config", "Protocol Details", "DNS Analysis", "Network Analysis",
-            "TLS Analysis", "Intelligence", "Xray Test", "Connection Architecture", "Security Report",
+            "TLS Analysis", "Intelligence", "Xray Test", "Architecture Diagnostics",
+            "Connection Architecture", "Security Report",
             "Setup Guide", "How to Run", "Reproduction Guide", "Raw Data",
         ]
         self._panels: dict[str, CopyableTextbox] = {}
@@ -114,6 +116,7 @@ class AnalysisTabs(ctk.CTkFrame):
         self._render_tls(result)
         self._render_intelligence(result)
         self._render_xray(result)
+        self._render_architecture_diagnostics(result)
         self._render_connection_architecture(result)
         self._render_security(result)
         self._render_setup_guide(result)
@@ -373,6 +376,11 @@ class AnalysisTabs(ctk.CTkFrame):
         lines.extend(["", "  AAAA Records:"])
         for rec in d.aaaa_records or ["  (none)"]:
             lines.append(f"    • {rec}")
+        lines.extend(["", "  NS Records:"])
+        for rec in d.ns_records or ["  (none)"]:
+            lines.append(f"    • {rec}")
+        if d.dns_provider:
+            lines.append(f"  DNS Provider : {d.dns_provider} ({d.dns_provider_confidence:.0%} heuristic)")
         lines.extend(["", "  CNAME Records:"])
         for rec in d.cname_records or ["  (none)"]:
             lines.append(f"    • {rec}")
@@ -581,6 +589,9 @@ class AnalysisTabs(ctk.CTkFrame):
         if x.errors:
             lines.extend(["", "── Errors ──"] + x.errors)
         self._write("Xray Test", "\n".join(lines))
+
+    def _render_architecture_diagnostics(self, r: AnalysisResult) -> None:
+        self._write("Architecture Diagnostics", format_architecture_diagnostics_text(r))
 
     def _render_connection_architecture(self, r: AnalysisResult) -> None:
         impl = r.implementation_analysis or {}

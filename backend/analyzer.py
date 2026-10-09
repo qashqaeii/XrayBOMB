@@ -30,6 +30,7 @@ from backend.security import (
     build_reproduction_guide,
 )
 from backend.endpoint_targets import resolve_endpoint_targets
+from backend.architecture_diagnostics import build_architecture_diagnostics
 from backend.implementation_analysis import build_implementation_analysis
 from backend.stealth_assessment import assess_stealth
 from backend.test_environment import build_test_environment_from_run
@@ -243,12 +244,21 @@ class ConfigAnalyzer:
             })
         )
 
+        arch_diag = build_architecture_diagnostics(
+            pre_calibrated.model_copy(update={
+                "setup_guide": setup_guide,
+                "optimization": optimization,
+                "implementation_analysis": impl.model_dump(),
+            })
+        )
+
         test_env = build_test_environment_from_run(xray_result.leak_check, xray_result).model_dump()
 
         result = pre_calibrated.model_copy(update={
             "setup_guide": setup_guide,
             "optimization": optimization,
             "implementation_analysis": impl.model_dump(),
+            "architecture_diagnostics": arch_diag,
             "test_environment": test_env,
             "raw_data": {},
         })
@@ -283,6 +293,7 @@ class ConfigAnalyzer:
             "confidence_calibration": result.confidence_calibration.model_dump(),
             "test_environment": result.test_environment,
             "implementation_analysis": result.implementation_analysis,
+            "architecture_diagnostics": arch_diag.model_dump(),
         }
         if plugin_data:
             result.raw_data["plugins"] = plugin_data

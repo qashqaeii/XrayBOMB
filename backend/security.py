@@ -222,7 +222,7 @@ def analyze_deployment(
         description="Server appears to be a direct VPS/hosting node.",
     ))
 
-    # CDN Fronted
+    # CDN Fronted — require HTTP edge or strong IP+cname heuristics (not DNS NS alone)
     cdn_conf = 0.10
     cdn_type = None
     if http_cdn:
@@ -230,8 +230,9 @@ def analyze_deployment(
         cdn_conf = 0.88
     if cdn_ips:
         best = max(cdn_ips, key=lambda x: x.cdn_confidence)
-        cdn_conf = min(0.95, max(cdn_conf, best.cdn_confidence + 0.1))
-        cdn_type = cdn_type or best.cdn_detected
+        if best.cdn_confidence >= 0.72:
+            cdn_conf = min(0.95, max(cdn_conf, best.cdn_confidence + 0.1))
+            cdn_type = cdn_type or best.cdn_detected
     elif has_cname:
         cdn_conf = max(cdn_conf, 0.55)
     if config.sni and config.sni != config.address:

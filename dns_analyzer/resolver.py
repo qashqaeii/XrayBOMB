@@ -10,6 +10,7 @@ import dns.asyncresolver
 import dns.reversename
 
 from backend.models import DNSAnalysis
+from dns_analyzer.provider import detect_dns_provider
 from utils.helpers import is_ip_address
 from utils.logger import get_logger
 
@@ -92,6 +93,16 @@ async def analyze_dns(hostname: str) -> DNSAnalysis:
     mx_records, _ = await _query(hostname, "MX")
     txt_records, _ = await _query(hostname, "TXT")
 
+    ns_records, _ = await _query(hostname, "NS")
+    zone_ns = ns_records
+    if not zone_ns and "." in hostname:
+        parts = hostname.split(".")
+        for i in range(len(parts) - 1):
+            zone = ".".join(parts[i:])
+            zone_ns, _ = await _query(zone, "NS")
+            if zone_ns:
+                break
+
     result.a_records = a_records
     result.aaaa_records = aaaa_records
     result.cname_records = cname_records
@@ -137,4 +148,11 @@ async def analyze_dns(hostname: str) -> DNSAnalysis:
         result.reverse_dns.extend(ptr)
 
     result.reverse_dns = list(dict.fromkeys(result.reverse_dns))
+
+    result.ns_records = list(dict.fromkeys(zone_ns))
+    provider, prov_conf, prov_evidence = detect_dns_provider(result.ns_records)
+    result.dns_provider = provider
+    result.dns_provider_confidence = prov_conf
+    result.dns_provider_evidence = prov_evidence
+
     return result

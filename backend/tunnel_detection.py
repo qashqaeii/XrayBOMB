@@ -278,10 +278,10 @@ def analyze_tunnels(
             steps.append("XHTTP + REALITY → stream-one")
         matches.append(_match("reality_camouflage", 0.92, ev, steps))
 
-    # ── CDN types (from network intelligence) ──
+    # ── CDN types (wire/strong IP heuristics only — DNS provider ≠ CDN) ──
     detected_cdns: set[str] = set()
     for ip in network:
-        if ip.cdn_detected and ip.cdn_confidence >= 0.55:
+        if ip.cdn_detected and ip.cdn_confidence >= 0.72:
             detected_cdns.add(ip.cdn_detected)
 
     http_cdn = connectivity.http_cdn_detected
@@ -290,7 +290,13 @@ def analyze_tunnels(
         if not primary_cdn:
             primary_cdn = http_cdn
 
-    if cdn_ips or primary_cdn or detected_cdns or http_cdn:
+    cdn_cname = any(
+        any(kw in r.lower() for kw in ("cloudflare", "arvan", "akamai", "fastly", "cloudfront"))
+        for r in dns.cname_records
+    )
+    has_cdn_signal = bool(cdn_ips or primary_cdn or detected_cdns or http_cdn or cdn_cname)
+
+    if has_cdn_signal:
         cdn_conf = 0.55
         if cdn_ips:
             cdn_conf = min(0.95, max(ip.cdn_confidence for ip in cdn_ips) + 0.05)

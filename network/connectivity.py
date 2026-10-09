@@ -12,7 +12,7 @@ import httpx
 import websocket
 
 from backend.models import ConnectivityResult, ParsedConfig, TestStatus, TransportType
-from network.http_probe import probe_http_fingerprint
+from network.http_probe import classify_http_baseline_status, probe_http_baseline, probe_http_fingerprint
 from network.latency_benchmark import benchmark_tcp_latency
 from network.transport_security import http_scheme, uses_tls_layer, websocket_scheme
 from network.transport_tests import run_transport_tests
@@ -103,7 +103,7 @@ async def test_websocket_upgrade(config: ParsedConfig, connect_host: str, port: 
             ws = websocket.create_connection(
                 url,
                 timeout=10,
-                host=sni if scheme == "wss" else connect_host,
+                host=host_header,
                 header={"Host": host_header},
                 sslopt=sslopt,
             )
@@ -125,24 +125,28 @@ async def test_http_response(
     connect_host: str,
     port: int,
     sni: Optional[str] = None,
-) -> tuple[TestStatus, Optional[int], str]:
-    scheme = http_scheme(config)
-    url = f"{scheme}://{connect_host}:{port}/"
+) -> tuple[TestStatus, Optional[int], str, dict]:
     host_header = config.host or sni or connect_host
-    try:
-        async with httpx.AsyncClient(timeout=10, verify=False, trust_env=False) as client:
-            headers = {"Host": host_header} if host_header else {}
-            response = await client.get(url, headers=headers)
-            note = ""
-            if response.status_code < 500:
-                if response.status_code in (403, 405):
-                    note = f"HTTP {response.status_code} received (not full usability proof)"
-                status = TestStatus.VALID
-                return status, response.status_code, note
-            return TestStatus.WARNING, response.status_code, f"HTTP {response.status_code}"
-    except Exception as exc:
-        logger.debug("HTTP test failed: %s", exc)
-        return TestStatus.INVALID, None, str(exc)[:120]
+    path = config.path or "/"
+    use_tls = uses_tls_layer(config)
+    baseline = await probe_http_baseline(
+        connect_host,
+        port,
+        path,
+        host_header,
+        use_tls=use_tls,
+        tls_sni=sni or host_header,
+    )
+    if baseline.get("error"):
+        return TestStatus.INVALID, None, baseline["error"], baseline
+    code = baseline.get("status_code")
+    label, note = classify_http_baseline_status(code, baseline.get("headers") or {})
+    status_map = {
+        "Valid": TestStatus.VALID,
+        "Warning": TestStatus.WARNING,
+        "Invalid": TestStatus.INVALID,
+    }
+    return status_map.get(label, TestStatus.INVALID), code, note, baseline
 
 
 async def test_tcp_connection_failure_rate(host: str, port: int, count: int = 4) -> Optional[float]:
@@ -203,6 +207,12 @@ async def run_connectivity_tests(
         if ws_from_transport:
             result.websocket_upgrade = ws_from_transport.status
             result.websocket_upgrade_note = ws_from_transport.details
+            if "101 OK" in ws_from_transport.details or ws_from_transport.status == TestStatus.VALID:
+                result.websocket_handshake_validated = True
+                result.websocket_handshake_status_code = 101
+                result.websocket_handshake_checks = [
+                    p.strip() for p in ws_from_transport.details.split(";") if p.strip()
+                ]
         else:
             result.websocket_upgrade = await test_websocket_upgrade(config, tcp_target, port, config.path or "/")
             if result.websocket_upgrade == TestStatus.INVALID:
@@ -224,10 +234,21 @@ async def run_connectivity_tests(
     if tcp_target and result.tcp_connect == TestStatus.VALID:
         result.latency_benchmark = await benchmark_tcp_latency(tcp_target, port)
 
-    http_status, code, http_note = await test_http_response(config, tcp_target, port, tls_sni)
+    http_status, code, http_note, baseline = await test_http_response(config, tcp_target, port, tls_sni)
     result.http_response = http_status
     result.http_status_code = code
     result.http_response_note = http_note
+    result.http_baseline_status = http_status
+    result.http_baseline_status_code = code
+    result.http_baseline_note = http_note
+    result.http_baseline_latency_ms = baseline.get("latency_ms")
+    result.http_baseline_headers = baseline.get("headers") or {}
+    if baseline.get("http_server") and not result.http_server_header:
+        result.http_server_header = baseline.get("http_server")
+    if baseline.get("cdn_detected") and not result.http_cdn_detected:
+        result.http_cdn_detected = baseline.get("cdn_detected")
+    if baseline.get("reverse_proxy_server") and not result.http_reverse_proxy:
+        result.http_reverse_proxy = baseline.get("reverse_proxy_server")
 
     if not is_ip_address(host):
         fp = await probe_http_fingerprint(

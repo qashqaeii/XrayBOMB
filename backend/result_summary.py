@@ -21,6 +21,7 @@ from backend.models import (
     TransportType,
     TunnelTypeMatch,
 )
+from backend.architecture_diagnostics import format_architecture_diagnostics_text
 from backend.stealth_assessment import format_risk_factors, format_score, score_bar
 from backend.tunnel_detection import TUNNEL_CATALOG
 from utils.country import format_country
@@ -341,6 +342,7 @@ def _connectivity_summary(r: AnalysisResult) -> list[str]:
         ("DNS resolve", conn.dns_resolve, conn.dns_latency_ms),
         ("TCP connect", conn.tcp_connect, conn.tcp_latency_ms),
         ("TLS handshake", conn.tls_handshake, conn.tls_latency_ms),
+        ("HTTP baseline", conn.http_baseline_status, conn.http_baseline_latency_ms),
         ("WebSocket upgrade", conn.websocket_upgrade, None),
         ("HTTP response", conn.http_response, conn.latency_ms),
     ]
@@ -358,7 +360,11 @@ def _connectivity_summary(r: AnalysisResult) -> list[str]:
             f"  Latency benchmark    : min={lb.min_ms} avg={lb.avg_ms} "
             f"p95={lb.p95_ms} max={lb.max_ms} ms ({lb.samples} samples)"
         )
-    if conn.websocket_upgrade == TestStatus.INVALID and conn.websocket_upgrade_note:
+    if conn.http_baseline_note:
+        lines.append(f"  HTTP baseline note : {conn.http_baseline_note}")
+    if conn.websocket_handshake_validated:
+        lines.append("  WS handshake       : RFC6455 validated (101 + Accept)")
+    elif conn.websocket_upgrade == TestStatus.INVALID and conn.websocket_upgrade_note:
         lines.append(f"  WS upgrade note    : {conn.websocket_upgrade_note}")
     if r.xray_test.proxy_test == TestStatus.VALID and conn.websocket_upgrade == TestStatus.INVALID:
         lines.append(
@@ -1413,6 +1419,8 @@ def build_result_summary(r: AnalysisResult) -> str:
     lines.extend(_http_fingerprint_summary(r))
     lines.append("")
     lines.extend(_connectivity_summary(r))
+    lines.append("")
+    lines.extend(format_architecture_diagnostics_text(r).split("\n"))
     lines.append("")
     lines.extend(_latency_interpretation(r))
     lines.append("")
