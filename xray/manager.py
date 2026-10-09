@@ -295,8 +295,11 @@ class XrayManager:
         *,
         deadline_sec: float = 20.0,
         poll_interval: float = 0.25,
+        handshake_timeout: float = 4.0,
     ) -> tuple[bool, str]:
-        """Wait until process alive, optional PID ownership, and SOCKS5 auth handshake."""
+        """Wait until process alive, SOCKS5 auth handshake (thread offload), optional PID check."""
+        import asyncio
+
         from utils.socks_verify import pid_listening_on_port, verify_socks5_username_auth
 
         deadline = time.monotonic() + deadline_sec
@@ -307,21 +310,52 @@ class XrayManager:
                 return False, f"Xray exited early (code {code})"
             if not run.socks_user or not run.socks_pass:
                 return False, "Missing per-run SOCKS credentials"
-            ok, detail = verify_socks5_username_auth(
-                run.socks_host,
-                run.socks_port,
-                run.socks_user,
-                run.socks_pass,
-            )
+            remaining = max(0.5, min(handshake_timeout, deadline - time.monotonic()))
+            try:
+                ok, detail = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        verify_socks5_username_auth,
+                        run.socks_host,
+                        run.socks_port,
+                        run.socks_user,
+                        run.socks_pass,
+                        timeout=remaining,
+                    ),
+                    timeout=remaining + 0.5,
+                )
+            except asyncio.TimeoutError:
+                last_detail = "SOCKS auth handshake thread timeout"
+                await asyncio_sleep(poll_interval)
+                continue
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                last_detail = str(exc)[:120]
+                await asyncio_sleep(poll_interval)
+                continue
+
             last_detail = detail
             if ok:
-                owned = pid_listening_on_port(run.proc.pid, run.socks_port, run.socks_host)
+                try:
+                    owned = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            pid_listening_on_port,
+                            run.proc.pid,
+                            run.socks_port,
+                            run.socks_host,
+                        ),
+                        timeout=2.0,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    owned = None
                 if owned is False:
-                    return False, "SOCKS port not owned by test Xray PID"
+                    return False, "SOCKS port listener PID mismatch (not this Xray process)"
                 extra = " (PID ownership confirmed)" if owned else " (PID ownership unverified)"
-                return True, f"SOCKS5 authenticated handshake OK{extra}"
+                return True, f"{detail}{extra}"
             await asyncio_sleep(poll_interval)
-        return False, f"Timeout waiting for authenticated SOCKS ({last_detail[:120]})"
+        return False, f"Timeout waiting for SOCKS5 auth readiness ({last_detail[:120]})"
 
     @staticmethod
     def stop_run(run: Optional[XrayBackgroundRun]) -> None:

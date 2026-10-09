@@ -6,10 +6,8 @@ from dataclasses import dataclass
 
 from backend.models import TestStatus, XrayTestResult
 
-# Contract for generate_204-style probes (not arbitrary HTTP 200 pages).
 E2E_PROBE_URL = "https://www.gstatic.com/generate_204"
-E2E_PRIMARY_STATUS = 204
-E2E_FALLBACK_200_MAX_BODY_BYTES = 512
+E2E_ENDPOINT_LABEL = "www.gstatic.com/generate_204"
 
 
 @dataclass(frozen=True)
@@ -25,15 +23,27 @@ class InternetE2EValidity:
         return self.internet_verified
 
 
-def evaluate_e2e_http_contract(status_code: int, body_len: int) -> tuple[bool, str]:
-    if status_code == E2E_PRIMARY_STATUS:
-        return True, "generate_204 contract (HTTP 204)"
-    if status_code == 200 and body_len <= E2E_FALLBACK_200_MAX_BODY_BYTES:
-        return True, f"minimal HTTP 200 body ({body_len} B) — generate_204 variant"
-    return False, (
-        f"HTTP response does not match E2E contract "
-        f"(status={status_code}, body={body_len} B; expected 204 or small 200)"
-    )
+def evaluate_e2e_http_contract(
+    status_code: int,
+    body: bytes,
+    *,
+    url: str = E2E_PROBE_URL,
+) -> tuple[bool, str]:
+    """
+    Verify response for a specific E2E probe URL.
+    Failure means this endpoint was not confirmed — not a blanket invalid config verdict.
+    """
+    probe = url.rstrip("/")
+    if probe.endswith("generate_204") or "generate_204" in probe:
+        if status_code == 204:
+            if len(body) == 0:
+                return True, f"{E2E_ENDPOINT_LABEL}: HTTP 204 empty body"
+            return True, f"{E2E_ENDPOINT_LABEL}: HTTP 204 ({len(body)} B body)"
+        return False, (
+            f"E2E not verified at {E2E_ENDPOINT_LABEL}: expected HTTP 204, "
+            f"got {status_code} ({len(body)} B) — does not prove config fails for all destinations"
+        )
+    return False, f"E2E not verified: no contract defined for probe URL {url!r}"
 
 
 def evaluate_xray_test_result(x: XrayTestResult) -> InternetE2EValidity:

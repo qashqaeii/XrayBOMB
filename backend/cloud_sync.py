@@ -9,7 +9,7 @@ import httpx
 
 from backend.models import AnalysisResult
 from utils.logger import get_logger
-from utils.redaction import redact_analysis_dict
+from utils.redaction import redact_export_json
 from utils.settings import get_settings
 
 logger = get_logger(__name__)
@@ -26,7 +26,7 @@ async def sync_upload(result: AnalysisResult) -> bool:
         async with httpx.AsyncClient(timeout=30) as client:
             payload = result.model_dump(mode="json")
             if settings.redact_secrets_export:
-                payload = redact_analysis_dict(payload)
+                payload = redact_export_json(payload)
             resp = await client.post(
                 settings.cloud_sync_url,
                 content=json.dumps(payload, default=str),

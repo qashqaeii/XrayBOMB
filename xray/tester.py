@@ -147,8 +147,8 @@ async def _test_socks_e2e(
         ) as client:
             resp = await client.get(E2E_PROBE_URL)
             latency = round((time.perf_counter() - start) * 1000, 2)
-            body_len = len(resp.content or b"")
-            ok, detail = evaluate_e2e_http_contract(resp.status_code, body_len)
+            body = resp.content or b""
+            ok, detail = evaluate_e2e_http_contract(resp.status_code, body, url=E2E_PROBE_URL)
             if ok:
                 return TestStatus.VALID, latency, True, f"{detail} ({latency} ms)"
             return TestStatus.INVALID, latency, False, detail

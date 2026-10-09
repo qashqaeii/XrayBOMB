@@ -1,9 +1,8 @@
-"""SOCKS5 handshake verification (auth + CONNECT probe) — no HTTP."""
+"""SOCKS5 readiness check (greeting + username/password auth only — no CONNECT)."""
 
 from __future__ import annotations
 
 import socket
-import struct
 from typing import Optional
 
 
@@ -24,11 +23,10 @@ def verify_socks5_username_auth(
     password: str,
     *,
     timeout: float = 5.0,
-    connect_target: tuple[str, int] = ("198.18.0.1", 80),
 ) -> tuple[bool, str]:
     """
-    Perform SOCKS5 greeting, username/password auth, and a minimal CONNECT.
-    Fails if credentials wrong or listener is not our authenticated SOCKS.
+    SOCKS5 method negotiation (RFC 1928) and username/password auth (RFC 1929).
+    Does not CONNECT to any remote target — readiness only.
     """
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
@@ -40,36 +38,23 @@ def verify_socks5_username_auth(
             sock.sendall(b"\x05\x01\x02")
             resp = _recv_exact(sock, 2)
             if resp[0] != 0x05:
-                return False, f"Bad SOCKS version {resp[0]}"
+                return False, f"SOCKS greeting failed: version={resp[0]} (expected 5)"
             if resp[1] != 0x02:
-                return False, f"Server did not select username auth (method={resp[1]})"
+                return False, f"SOCKS greeting failed: method={resp[1]} (expected username/password 2)"
             auth_req = b"\x01" + bytes([len(u)]) + u + bytes([len(p)]) + p
             sock.sendall(auth_req)
             auth_resp = _recv_exact(sock, 2)
+            if auth_resp[0] != 0x01:
+                return False, f"SOCKS auth subnegotiation version={auth_resp[0]} (expected 1)"
             if auth_resp[1] != 0x00:
-                return False, "SOCKS username/password rejected"
-            dst_host, dst_port = connect_target
-            host_b = dst_host.encode("utf-8")
-            req = b"\x05\x01\x00\x03" + bytes([len(host_b)]) + host_b + struct.pack("!H", dst_port)
-            sock.sendall(req)
-            hdr = _recv_exact(sock, 4)
-            if hdr[1] != 0x00:
-                return False, f"SOCKS CONNECT failed (rep={hdr[1]})"
-            atyp = hdr[3]
-            if atyp == 0x01:
-                _recv_exact(sock, 4 + 2)
-            elif atyp == 0x03:
-                ln = _recv_exact(sock, 1)[0]
-                _recv_exact(sock, ln + 2)
-            elif atyp == 0x04:
-                _recv_exact(sock, 16 + 2)
-            return True, "SOCKS5 auth + CONNECT OK"
+                return False, f"SOCKS username/password rejected (status={auth_resp[1]})"
+            return True, "SOCKS5 greeting + username/password auth OK (no CONNECT performed)"
     except Exception as exc:
         return False, str(exc)[:200]
 
 
 def pid_listening_on_port(pid: int, port: int, host: str = "127.0.0.1") -> Optional[bool]:
-    """Return True/False if psutil can confirm PID owns the TCP listener; None if unknown."""
+    """True/False if PID owns listener; None if ownership cannot be observed."""
     try:
         import psutil
     except ImportError:
@@ -82,5 +67,9 @@ def pid_listening_on_port(pid: int, port: int, host: str = "127.0.0.1") -> Optio
                 if host in ("127.0.0.1", "0.0.0.0", "::1", "") or conn.laddr.ip in (host, "0.0.0.0", "::"):
                     return True
         return False
-    except (PermissionError, OSError):
+    except PermissionError:
+        return None
+    except Exception as exc:
+        if exc.__class__.__name__ == "AccessDenied":
+            return None
         return None
