@@ -178,6 +178,7 @@ class TransportTestResult(BaseModel):
     status: TestStatus = TestStatus.PENDING
     latency_ms: Optional[float] = None
     details: str = ""
+    debug: dict[str, Any] = Field(default_factory=dict)
 
 
 class TunnelRoute(BaseModel):
@@ -229,6 +230,9 @@ class ConnectivityResult(BaseModel):
     websocket_handshake_status_code: Optional[int] = None
     websocket_handshake_checks: list[str] = Field(default_factory=list)
     websocket_handshake_validated: bool = False
+    websocket_handshake_ws_key: Optional[str] = None
+    websocket_handshake_expected_accept: Optional[str] = None
+    websocket_handshake_received_accept: Optional[str] = None
     websocket_upgrade_note: str = ""
     errors: list[str] = Field(default_factory=list)
 
@@ -588,6 +592,10 @@ class ArchitectureDiagnosticsReport(BaseModel):
     unknowns: list[str] = Field(default_factory=list)
     reproduction_client: list[str] = Field(default_factory=list)
     reproduction_server_hints: list[str] = Field(default_factory=list)
+    cdn_fronting_tier: str = "unconfirmed"
+    direct_vps_compatible: bool = True
+    origin_ip_status: str = "unknown"
+    primary_scenario_label: str = ""
 
 
 class AnalysisResult(BaseModel):

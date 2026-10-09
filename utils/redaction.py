@@ -22,6 +22,7 @@ _SECRET_FIELD_NAMES = frozenset({
     "raw_url",
     "subscription",
     "socks_pass",
+    "websocket_handshake_ws_key",
 })
 
 _SKIP_REDACT_KEYS = frozenset({

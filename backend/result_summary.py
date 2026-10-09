@@ -21,6 +21,13 @@ from backend.models import (
     TransportType,
     TunnelTypeMatch,
 )
+from backend.architecture_consistency import (
+    cap_tunnel_confidence,
+    catalog_status_for_topology,
+    cdn_edge_proven,
+    cdn_fronting_tier,
+    ensure_architecture_diagnostics,
+)
 from backend.architecture_diagnostics import format_architecture_diagnostics_text
 from backend.stealth_assessment import format_risk_factors, format_score, score_bar
 from backend.tunnel_detection import TUNNEL_CATALOG
@@ -157,10 +164,10 @@ class RankedScenario:
 
 
 def _format_edge_route(r: AnalysisResult) -> str:
-    """Human-readable edge route — never imply origin geo when CDN is present."""
+    """Human-readable edge route — CDN origin hidden only when edge is proven."""
     d = r.deployment
     t = r.tunnel
-    cdn = r.connectivity.http_cdn_detected or d.cdn_type
+    cdn = d.cdn_type if cdn_edge_proven(r) else None
     client = format_country(t.client_country_code, t.client_country) or "Client"
 
     if cdn:
@@ -196,42 +203,30 @@ def _build_verdict(
     primary: Optional[RankedScenario],
     exit_intel: Optional[ExitIntelSnapshot],
 ) -> str:
-    """One-line executive verdict."""
+    """One-line executive verdict (ArchitectureDiagnosticsReport is authoritative)."""
+    diag = ensure_architecture_diagnostics(r)
     c = r.config
-    d = r.deployment
     host = _front_host(c, r.dns.hostname)
     transport = _effective_transport(c)
-    origin_hint = _origin_country_hint(r, exit_intel)
+    exit_ip = r.xray_test.exit_ip or r.xray_test.leak_check.proxy_exit_ip
 
-    parts: list[str] = []
-    http_cdn = r.connectivity.http_cdn_detected
-    if http_cdn or d.cdn_type:
-        parts.append(f"{(http_cdn or d.cdn_type)} CDN fronting")
-    elif primary:
-        parts.append(primary.name)
-    else:
-        parts.append("Direct or unknown topology")
-
-    parts.append(f"{c.protocol.value}+{transport.value}")
-    parts.append(_security_label(c))
-    parts.append(f"on :{c.port}")
-
-    if origin_hint and d.cdn_type:
-        parts.append(f"— origin likely {origin_hint} VPS (from live exit IP)")
-    elif origin_hint:
-        parts.append(f"— server egress {origin_hint}")
-
+    parts = [
+        f"ASSESSMENT: {diag.assessment_title}",
+        f"{host}:{c.port}",
+        f"{c.protocol.value}+{transport.value}",
+        _security_label(c),
+    ]
+    if exit_ip:
+        parts.append(f"exit IP observed {exit_ip} (not origin proof)")
     if _proxy_ok(r):
         lat = r.xray_test.proxy_latency_ms
-        if lat is not None:
-            parts.append(f"| tunnel works ({lat:.0f}ms)")
+        parts.append(f"E2E OK ({lat:.0f}ms)" if lat is not None else "E2E OK")
     else:
-        parts.append("| live test not confirmed")
-
-    return (
-        f"MOST LIKELY: {' '.join(parts[:4])} {host} "
-        + " ".join(parts[4:])
-    ).strip()
+        parts.append("E2E not verified")
+    tier = cdn_fronting_tier(r)
+    if tier != "unconfirmed":
+        parts.append(f"CDN fronting={tier}")
+    return " | ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -247,7 +242,7 @@ def _build_origin_alternatives(
 ) -> list[OriginAlternative]:
     """Ranked origin-location hypotheses when CDN hides the backend."""
     d = r.deployment
-    if not d.cdn_type:
+    if not cdn_edge_proven(r):
         return []
 
     exit_ct = (exit_intel.country_code or exit_intel.country) if exit_intel else None
@@ -585,8 +580,9 @@ def _post_process_ranked(r: AnalysisResult, ranked: list[RankedScenario]) -> lis
         if s.tunnel_id == "cdn_fronting" and seen_cdn_specific:
             conf = min(conf, 0.72)
 
-        if d.cdn_type and s.tunnel_id == "direct_vps":
-            conf = min(conf, 0.18)
+        conf = cap_tunnel_confidence(s.tunnel_id, conf, r)
+        if cdn_edge_proven(r) and s.tunnel_id == "direct_vps":
+            conf = min(conf, 0.22)
 
         if s.tunnel_id == "load_balancer" and d.cdn_type and len(r.dns.a_records) >= 2:
             conf = min(conf, 0.32)
@@ -960,8 +956,11 @@ def _collect_evidence(r: AnalysisResult) -> list[str]:
         ev.append(f"DNS A: {', '.join(dns.a_records[:4])}")
     if dns.cname_records:
         ev.append(f"DNS CNAME: {', '.join(dns.cname_records[:3])}")
-    if d.cdn_type:
-        ev.append(f"CDN detected: {d.cdn_type}")
+    tier = cdn_fronting_tier(r)
+    if tier != "unconfirmed":
+        ev.append(f"CDN fronting tier: {tier}" + (f" ({d.cdn_type})" if d.cdn_type else ""))
+    elif r.dns.dns_provider:
+        ev.append(f"DNS provider: {r.dns.dns_provider} (≠ CDN proof)")
     if d.cdn_backend_ips:
         ev.append(f"CDN edge IPs: {', '.join(d.cdn_backend_ips[:4])}")
 
@@ -1030,7 +1029,7 @@ def _build_ranked_scenarios(r: AnalysisResult) -> list[RankedScenario]:
     seen: dict[str, RankedScenario] = {}
 
     for m in ta.detected_types:
-        conf = _boost_confidence(m.tunnel_id, m.confidence, r)
+        conf = cap_tunnel_confidence(m.tunnel_id, _boost_confidence(m.tunnel_id, m.confidence, r), r)
         seen[m.tunnel_id] = RankedScenario(
             rank=0,
             tunnel_id=m.tunnel_id,
@@ -1118,26 +1117,21 @@ def _build_architecture_layers(r: AnalysisResult, primary: Optional[RankedScenar
     rp_layer = next((s for s in active if s.tunnel_id == "reverse_proxy"), None)
     camo_layer = next((s for s in active if s.category == "camouflage"), None)
 
-    lines = ["Architecture stack (corrected — exit IP = origin egress):", ""]
+    lines = ["Architecture stack (exit IP = observed egress, not independent origin proof):", ""]
 
     client = "Client"
     if r.tunnel.client_country:
         client += f" ({r.tunnel.client_country})"
     chain = [client]
 
-    if d.cdn_type and r.network:
+    if cdn_edge_proven(r) and d.cdn_type and r.network:
         net = r.network[0]
         edge_loc = format_country(net.country_code, net.country) or "?"
         chain.append(f"{d.cdn_type} edge — {net.ip} ({edge_loc})")
+        chain.append("Origin VPS — unknown (hidden behind proven CDN edge)")
     elif r.network:
         net = r.network[0]
-        chain.append(f"Target {net.ip} ({format_country(net.country_code, net.country)})")
-
-    if d.cdn_type:
-        org_suffix = ""
-        if exit_intel and exit_intel.organization:
-            org_suffix = f", {exit_intel.organization}"
-        chain.append(f"Origin VPS — {origin_hint}{org_suffix} (IP hidden behind CDN)")
+        chain.append(f"Connect target {net.ip} ({format_country(net.country_code, net.country)})")
 
     if rp_layer and _effective_transport(c) in (
         TransportType.WS, TransportType.GRPC, TransportType.XHTTP, TransportType.HTTPUPGRADE,
@@ -1182,10 +1176,9 @@ def _catalog_coverage(r: AnalysisResult, ranked: list[RankedScenario]) -> list[s
         category = _category_for_id(tid)
         match = ranked_ids.get(tid)
         if match and match.confidence >= 0.30:
-            status = f"APPLICABLE  {_pct(match.confidence)}  [{_bar(match.confidence)}]"
+            status = catalog_status_for_topology(tid, r, match.confidence)
         else:
-            reason = _rule_out_reason(tid, r)
-            status = f"RULED OUT   — {reason}"
+            status = catalog_status_for_topology(tid, r, match.confidence if match else 0.0)
 
         line = f"  {cat['name']:<38} {status}"
         categories.setdefault(category, []).append(line)
@@ -1227,9 +1220,9 @@ def _rule_out_reason(tid: str, r: AnalysisResult) -> str:
         return "CDN present but confidence below threshold"
 
     if tid == "direct_vps":
-        if d.cdn_type or any(ip.cdn_detected for ip in r.network):
-            return "CDN detected — not direct"
-        return "weak direct-VPS signals"
+        if cdn_edge_proven(r):
+            return "CDN edge proven — direct unlikely"
+        return "compatible — not ruled out without wire proof"
 
     if tid == "cloudflare_tunnel":
         if not any("cfargotunnel" in (x or "").lower() for x in r.dns.cname_records):

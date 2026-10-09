@@ -77,11 +77,11 @@ def _live_proxy_ok(r: AnalysisResult) -> bool:
 
 
 def _cdn_detected(r: AnalysisResult) -> bool:
-    return bool(
-        r.deployment.cdn_type
-        or r.connectivity.http_cdn_detected
-        or any(ip.cdn_detected for ip in r.network)
-    )
+    from backend.architecture_consistency import cdn_edge_proven
+
+    if cdn_edge_proven(r):
+        return True
+    return bool(r.connectivity.http_cdn_detected and r.connectivity.http_probe_headers.get("cf-ray"))
 
 
 def calibrate_evidence(

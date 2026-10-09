@@ -348,7 +348,12 @@ class AnalysisTabs(ctk.CTkFrame):
             ("Reality", str(c.reality)),
             ("Public Key", self._mask(c.public_key)),
             ("Short ID", self._mask(c.short_id)),
-            ("SNI", c.sni or "N/A"),
+            (
+                "SNI",
+                (c.sni or "N/A")
+                if (c.tls or c.reality or (c.security or "").lower() == "tls")
+                else "N/A (no TLS on wire)",
+            ),
             ("Host", c.host or "N/A"),
             ("ALPN", c.alpn or "N/A"),
             ("Path", c.path or "N/A"),
@@ -567,7 +572,8 @@ class AnalysisTabs(ctk.CTkFrame):
             "── IP / DNS Leak Check ──",
             f"  Client IP     : {lk.client_ip or 'N/A'}",
             f"  Proxy Exit IP : {lk.proxy_exit_ip or 'N/A'} ({lk.proxy_exit_country or '?'}) colo={lk.proxy_exit_colo or '?'}",
-            f"  IP Leak       : {('Unknown' if lk.ip_leak is None else ('YES ⚠' if lk.ip_leak else 'No ✓'))}",
+            f"  IP Leak       : {('Not verified' if lk.ip_leak is None else ('YES ⚠' if lk.ip_leak else 'No leak observed'))}",
+            f"  DNS Leak      : {('Not verified' if lk.dns_leak is None else ('YES ⚠' if lk.dns_leak else 'No leak observed'))}",
             f"  Baseline      : {lk.baseline_status} ({len(lk.baseline_samples)} samples)",
             f"  Direct DNS A  : {', '.join(lk.direct_dns_ips) or 'N/A'}",
         ])

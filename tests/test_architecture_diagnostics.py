@@ -39,7 +39,7 @@ def test_websocket_accept_validation():
     mod = _load_http_probe()
     key = "dGhlIHNhbXBsZSBub25jZQ=="
     expected = mod._expected_ws_accept(key)
-    ok, checks = mod.validate_websocket_handshake_response(
+    ok, checks, debug = mod.validate_websocket_handshake_response(
         101,
         {
             "upgrade": "websocket",
@@ -49,17 +49,49 @@ def test_websocket_accept_validation():
         key,
     )
     assert ok
+    assert debug["expected_accept"] == debug["received_accept"]
     assert any("101" in c for c in checks)
+
+
+def test_websocket_rfc6455_standard_key():
+    mod = _load_http_probe()
+    key = "dGhlIHNhbXBsZSBub25jZQ=="
+    accept = mod._expected_ws_accept(key)
+    ok, _, debug = mod.validate_websocket_handshake_response(
+        101,
+        {"upgrade": "websocket", "connection": "Upgrade", "sec-websocket-accept": accept},
+        key,
+    )
+    assert ok
+    assert debug["expected_accept"] == accept
+
+
+def test_websocket_random_key_roundtrip():
+    mod = _load_http_probe()
+    import base64
+    import os
+
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    expected = mod._expected_ws_accept(key)
+    ok, _, debug = mod.validate_websocket_handshake_response(
+        101,
+        {"upgrade": "websocket", "connection": "Upgrade", "sec-websocket-accept": expected},
+        key,
+    )
+    assert ok
+    assert debug["ws_key"] == key
 
 
 def test_websocket_101_wrong_accept_fails():
     mod = _load_http_probe()
-    ok, _ = mod.validate_websocket_handshake_response(
+    ok, checks, debug = mod.validate_websocket_handshake_response(
         101,
         {"upgrade": "websocket", "connection": "Upgrade", "sec-websocket-accept": "bad"},
         "dGhlIHNhbXBsZSBub25jZQ==",
     )
     assert not ok
+    assert debug["expected_accept"] != debug["received_accept"]
+    assert any("mismatch" in c for c in checks)
 
 
 def test_dns_provider_arvan_from_ns():

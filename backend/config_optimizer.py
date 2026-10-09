@@ -130,7 +130,13 @@ def _apply_blueprint(config: ParsedConfig) -> ParsedConfig:
                 opt.fingerprint = "chrome"
             if opt.reality and not opt.flow:
                 opt.flow = "xtls-rprx-vision"
-        if opt.port not in (443, 8443):
+        plain_ws = (
+            not opt.tls
+            and not opt.reality
+            and (opt.security or "none").lower() == "none"
+            and opt.transport_type == TransportType.WS
+        )
+        if not plain_ws and opt.port not in (443, 8443):
             opt.port = 443
         opt.allow_insecure = False
         if opt.transport_type == TransportType.WS and not opt.path:
@@ -215,8 +221,16 @@ def _delivery_checklist(result: AnalysisResult) -> list[str]:
         f"{'[x]' if not result.config.allow_insecure else '[ ]'} allowInsecure disabled",
         f"{'[x]' if result.config.reality or (result.config.tls and s.score >= 60) else '[ ]'} REALITY or valid TLS",
         f"{'[x]' if x.proxy_test.value == 'Valid' else '[ ]'} Live Xray test (proxy valid)",
-        f"{'[x]' if not lk.ip_leak else '[ ]'} No IP leak",
-        f"{'[x]' if lk.dns_leak is False else '[ ]'} No DNS leak (or N/A)",
+        (
+            "[ ] IP leak not verified (run live test)"
+            if lk.ip_leak is None
+            else f"{'[x]' if not lk.ip_leak else '[ ]'} No IP leak"
+        ),
+        (
+            "[ ] DNS leak not verified"
+            if lk.dns_leak is None or lk.dns_leak_status.value in ("Not tested", "Pending")
+            else f"{'[x]' if lk.dns_leak is False else '[ ]'} No DNS leak"
+        ),
         f"{'[x]' if s.score >= 65 else '[ ]'} Security score >= 65",
         f"{'[x]' if result.optimization.iran_score >= 60 else '[ ]'} Iran score >= 60",
     ]
@@ -314,13 +328,25 @@ def build_config_optimization(result: AnalysisResult) -> ConfigOptimizationRepor
         iran += 8
         sell += 5
 
-    if not c.reality:
+    plain_inbound = (
+        not c.tls
+        and not c.reality
+        and (c.security or "none").lower() == "none"
+        and c.transport_type == TransportType.WS
+    )
+    if not c.reality and not plain_inbound:
         actions.append(_action(
             OptimizationPriority.HIGH, "Enable REALITY",
             "Best anti-DPI option for Iran — plain TLS or VMess alone is weak.",
             field="security", current=c.security or "tls/none", suggested="reality", gain=20,
         ))
-    else:
+    elif not c.reality and plain_inbound:
+        actions.append(_action(
+            OptimizationPriority.MEDIUM, "Optional upgrade path",
+            "Current plain WS on :80 works — if hardening, prefer TLS:443 or REALITY (not security=none on 443).",
+            gain=5,
+        ))
+    if c.reality:
         iran += 22
         sell += 10
         if not c.flow:
@@ -349,11 +375,20 @@ def build_config_optimization(result: AnalysisResult) -> ConfigOptimizationRepor
         iran += 6
 
     if c.port != 443:
-        actions.append(_action(
-            OptimizationPriority.HIGH, "Use port 443",
-            "Looks like HTTPS — odd ports get filtered faster in Iran.", field="port",
-            current=str(c.port), suggested="443", gain=8,
-        ))
+        if plain_inbound and c.port == 80:
+            pass
+        elif c.tls or c.reality or (c.security or "").lower() == "tls":
+            actions.append(_action(
+                OptimizationPriority.HIGH, "Use port 443",
+                "Looks like HTTPS — odd ports get filtered faster in Iran.", field="port",
+                current=str(c.port), suggested="443", gain=8,
+            ))
+        else:
+            actions.append(_action(
+                OptimizationPriority.MEDIUM, "Port strategy",
+                "If staying on cleartext WS, port 80 is common — do not use security=none on 443.",
+                field="port", current=str(c.port), suggested="80+TLS or 443+TLS", gain=4,
+            ))
     else:
         iran += 6
 
@@ -367,11 +402,13 @@ def build_config_optimization(result: AnalysisResult) -> ConfigOptimizationRepor
         iran += 5
         sell += 5
 
-    cdn_any = any(n.cdn_detected for n in result.network) or result.deployment.cdn_type
-    if not cdn_any and not is_ip_address(c.address):
+    from backend.architecture_consistency import cdn_edge_proven
+
+    cdn_any = cdn_edge_proven(result)
+    if not cdn_any and not is_ip_address(c.address) and not plain_inbound:
         actions.append(_action(
-            OptimizationPriority.HIGH, "CDN fronting",
-            "Cloudflare or Arvan to hide server IP.", gain=8,
+            OptimizationPriority.MEDIUM, "Optional CDN fronting",
+            "Only if you need to hide origin — requires CDN edge proof and panel setup.", gain=5,
         ))
     elif cdn_any:
         iran += 8

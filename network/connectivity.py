@@ -207,12 +207,15 @@ async def run_connectivity_tests(
         if ws_from_transport:
             result.websocket_upgrade = ws_from_transport.status
             result.websocket_upgrade_note = ws_from_transport.details
-            if "101 OK" in ws_from_transport.details or ws_from_transport.status == TestStatus.VALID:
-                result.websocket_handshake_validated = True
-                result.websocket_handshake_status_code = 101
-                result.websocket_handshake_checks = [
-                    p.strip() for p in ws_from_transport.details.split(";") if p.strip()
-                ]
+            dbg = ws_from_transport.debug or {}
+            result.websocket_handshake_status_code = dbg.get("status_code")
+            result.websocket_handshake_ws_key = dbg.get("ws_key")
+            result.websocket_handshake_expected_accept = dbg.get("expected_accept")
+            result.websocket_handshake_received_accept = dbg.get("received_accept")
+            result.websocket_handshake_checks = [
+                p.strip() for p in ws_from_transport.details.split(";") if p.strip()
+            ]
+            result.websocket_handshake_validated = ws_from_transport.status == TestStatus.VALID
         else:
             result.websocket_upgrade = await test_websocket_upgrade(config, tcp_target, port, config.path or "/")
             if result.websocket_upgrade == TestStatus.INVALID:

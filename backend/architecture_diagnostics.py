@@ -34,14 +34,6 @@ def _cdn_fronting_tier(r: AnalysisResult) -> tuple[str, str]:
         return "confirmed", f"HTTP edge headers + Server/CDN hint ({conn.http_cdn_detected})"
     if conn.http_cdn_detected:
         return "probable", f"HTTP fingerprint suggests {conn.http_cdn_detected} (no full edge header set)"
-    strong_ip = [
-        ip for ip in r.network
-        if ip.cdn_detected and ip.cdn_confidence >= 0.72
-    ]
-    if strong_ip:
-        return "probable", (
-            f"Resolved IP ASN/org heuristic ({strong_ip[0].cdn_detected}) — not proof on wire"
-        )
     if r.dns.dns_provider and "cdn" not in (r.dns.dns_provider or "").lower():
         return "unconfirmed", (
             f"DNS hosted by {r.dns.dns_provider} — DNS management ≠ active CDN fronting"
@@ -97,14 +89,15 @@ def _assess_architecture(r: AnalysisResult) -> tuple[str, str, list[str], list[s
 
     exit_ip = r.xray_test.exit_ip or r.xray_test.leak_check.proxy_exit_ip
     target_ip = r.dns.a_records[0] if r.dns.a_records else (r.network[0].ip if r.network else None)
-    if exit_ip and target_ip:
-        if exit_ip == target_ip:
-            positives.append(f"Exit IP matches connect target {target_ip}")
-        else:
-            positives.append(f"Exit IP {exit_ip} differs from DNS A {target_ip} (possible NAT/CDN/relay)")
-            unknowns.append("Intermediate hops between connect IP and egress")
+    if exit_ip and target_ip and exit_ip == target_ip:
+        positives.append(
+            f"Exit IP equals DNS/connect IP {target_ip} for this run (egress observed, not separate origin proof)"
+        )
+    elif exit_ip and target_ip:
+        positives.append(f"Exit IP {exit_ip} differs from DNS A {target_ip}")
+        unknowns.append("Intermediate hops between connect IP and egress")
 
-    unknowns.append("Origin IP behind CDN (if any)")
+    unknowns.append("Origin IP (independent of exit IP)")
     unknowns.append("Internal server inbound / panel layout")
 
     return title, summary, positives, negatives, list(dict.fromkeys(unknowns))[:8]
@@ -136,9 +129,12 @@ def build_architecture_diagnostics(r: AnalysisResult) -> ArchitectureDiagnostics
         ),
     ]
     if c.transport_type == TransportType.WS:
-        ws_status = "confirmed" if conn.websocket_handshake_validated else _evidence_status_from_test(
-            conn.websocket_upgrade,
-        )
+        if conn.websocket_handshake_validated:
+            ws_status = "confirmed"
+        elif conn.websocket_upgrade == TestStatus.WARNING:
+            ws_status = "probable"
+        else:
+            ws_status = _evidence_status_from_test(conn.websocket_upgrade)
         ws_detail = conn.websocket_upgrade_note or "—"
         if conn.websocket_handshake_status_code:
             ws_detail = f"HTTP {conn.websocket_handshake_status_code} — {ws_detail}"
@@ -202,17 +198,29 @@ def build_architecture_diagnostics(r: AnalysisResult) -> ArchitectureDiagnostics
     report.negative_evidence = neg
     report.unknowns = unk
 
+    tls_active = c.tls or (c.security or "").lower() in ("tls", "reality")
     report.reproduction_client = [
         f"Connect {eff['connect_address']}:{eff['connect_port']} network={eff['network']} security={eff['security']}",
-        f"Host={eff['effective_host']} SNI={eff['effective_sni']} path={eff['effective_path']}",
+        f"Host={eff['effective_host']} path={eff['effective_path']}",
     ]
+    if tls_active:
+        report.reproduction_client.append(f"TLS SNI={eff['effective_sni']}")
+    elif c.sni or c.host:
+        report.reproduction_client.append(
+            f"Host header domain={eff['effective_host']} (no TLS — SNI not used on wire)"
+        )
     report.reproduction_server_hints = [
         "If direct inbound: Xray listens on public port with matching path/Host.",
         "If reverse proxy: terminate TLS/HTTP on nginx/caddy and proxy_pass to localhost Xray.",
         "If CDN: origin must accept CDN-forwarded Host/SNI — requires panel/DNS evidence (not guessed here).",
     ]
-    if is_ip_address(c.address) and c.sni:
-        report.reproduction_client.append(f"Client uses IP connect with SNI={c.sni}")
+    if is_ip_address(c.address) and c.sni and tls_active:
+        report.reproduction_client.append(f"Client uses IP connect with TLS SNI={c.sni}")
+
+    report.cdn_fronting_tier = cdn_tier
+    report.direct_vps_compatible = cdn_tier != "confirmed"
+    report.origin_ip_status = "unknown"
+    report.primary_scenario_label = title
 
     return report
 

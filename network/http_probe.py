@@ -238,10 +238,17 @@ def validate_websocket_handshake_response(
     status_code: int,
     headers: dict[str, str],
     ws_key: str,
-) -> tuple[bool, list[str]]:
+) -> tuple[bool, list[str], dict[str, str]]:
     """Validate RFC6455 handshake response fields (independent of post-handshake timeout)."""
     checks: list[str] = []
     ok = True
+    expected = _expected_ws_accept(ws_key.strip())
+    received = (headers.get("sec-websocket-accept") or "").strip()
+    debug = {
+        "ws_key": ws_key,
+        "expected_accept": expected,
+        "received_accept": received,
+    }
     if status_code != 101:
         checks.append(f"status={status_code} (expected 101)")
         ok = False
@@ -259,14 +266,17 @@ def validate_websocket_handshake_response(
         ok = False
     else:
         checks.append("Connection contains Upgrade")
-    accept = headers.get("sec-websocket-accept", "")
-    expected = _expected_ws_accept(ws_key)
-    if accept != expected:
-        checks.append("Sec-WebSocket-Accept mismatch")
+    if not received:
+        checks.append("Sec-WebSocket-Accept missing")
+        ok = False
+    elif received != expected:
+        checks.append(
+            f"Sec-WebSocket-Accept mismatch expected={expected} received={received}"
+        )
         ok = False
     else:
         checks.append("Sec-WebSocket-Accept valid")
-    return ok, checks
+    return ok, checks, debug
 
 
 def _sync_websocket_handshake(
@@ -297,6 +307,8 @@ def _sync_websocket_handshake(
         "handshake_ok": False,
         "checks": [],
         "headers": {},
+        "accept_debug": {},
+        "ws_key": ws_key,
         "error": None,
         "post_handshake_note": None,
     }
@@ -325,9 +337,10 @@ def _sync_websocket_handshake(
         out["headers"] = {k: headers[k] for k in (
             "upgrade", "connection", "sec-websocket-accept", "server",
         ) if k in headers}
-        ok, checks = validate_websocket_handshake_response(status_code, headers, ws_key)
+        ok, checks, debug = validate_websocket_handshake_response(status_code, headers, ws_key)
         out["handshake_ok"] = ok
         out["checks"] = checks
+        out["accept_debug"] = debug
         if ok:
             out["post_handshake_note"] = (
                 "Handshake validated; post-upgrade read/timeout is separate from handshake success."

@@ -101,13 +101,20 @@ async def test_websocket_with_headers(
     )
     result.latency_ms = round((time.perf_counter() - start) * 1000, 2)
 
+    dbg = hs.get("accept_debug") or {}
+    result.debug = {
+        "ws_key": hs.get("ws_key"),
+        "expected_accept": dbg.get("expected_accept"),
+        "received_accept": dbg.get("received_accept"),
+        "status_code": hs.get("status_code"),
+    }
     if hs.get("handshake_ok"):
         result.status = TestStatus.VALID
         result.details = f"101 OK — Host={host_header}; " + "; ".join(hs.get("checks") or [])
     elif hs.get("status_code") == 101:
         result.status = TestStatus.WARNING
         result.details = (
-            f"HTTP 101 but validation incomplete — Host={host_header}; "
+            f"HTTP 101 — Accept validation failed — Host={host_header}; "
             + "; ".join(hs.get("checks") or [])
         )
     elif hs.get("error"):

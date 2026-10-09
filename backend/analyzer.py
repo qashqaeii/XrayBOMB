@@ -30,6 +30,7 @@ from backend.security import (
     build_reproduction_guide,
 )
 from backend.endpoint_targets import resolve_endpoint_targets
+from backend.architecture_consistency import align_analysis_with_architecture
 from backend.architecture_diagnostics import build_architecture_diagnostics
 from backend.implementation_analysis import build_implementation_analysis
 from backend.stealth_assessment import assess_stealth
@@ -262,6 +263,11 @@ class ConfigAnalyzer:
             "test_environment": test_env,
             "raw_data": {},
         })
+        result = align_analysis_with_architecture(result)
+        setup_guide = result.setup_guide
+        deployment = result.deployment
+        tunnel_analysis = result.tunnel_analysis
+        arch_diag = result.architecture_diagnostics
 
         stage(14, "Plugins")
         result = get_plugin_manager().run_hooks(result, config)
