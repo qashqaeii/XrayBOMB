@@ -105,7 +105,9 @@ def effective_transport(c: ParsedConfig) -> TransportType:
 
 
 def live_proxy_ok(r: AnalysisResult) -> bool:
-    return r.xray_test.proxy_test == TestStatus.VALID
+    from backend.e2e_validity import evaluate_xray_test_result
+
+    return evaluate_xray_test_result(r.xray_test).internet_verified
 
 
 def exit_ip(r: AnalysisResult) -> Optional[str]:

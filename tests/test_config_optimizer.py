@@ -36,7 +36,7 @@ def _minimal_result() -> AnalysisResult:
         security=SecurityReport(score=80, potential_score=90),
         xray_test=XrayTestResult(
             proxy_test=TestStatus.VALID,
-            leak_check=LeakCheckResult(ip_leak=False, dns_leak=False),
+            leak_check=LeakCheckResult(ip_leak=None, dns_leak=None),
         ),
     )
 

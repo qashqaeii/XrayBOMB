@@ -71,7 +71,9 @@ def _level_rank(level: ConfidenceLevel) -> int:
 
 
 def _live_proxy_ok(r: AnalysisResult) -> bool:
-    return r.xray_test.proxy_test == TestStatus.VALID
+    from backend.e2e_validity import evaluate_xray_test_result
+
+    return evaluate_xray_test_result(r.xray_test).internet_verified
 
 
 def _cdn_detected(r: AnalysisResult) -> bool:
@@ -248,7 +250,7 @@ def build_confidence_calibration(
             continue
         ev_joined = " ".join(match.evidence).lower()
         direct_obs = "cname=" in ev_joined or (
-            "xray_proxy_test=valid" in ev_joined
+            "internet_e2e_verified" in ev_joined
             and any(tok in ev_joined for tok in ("panel=", "http_server=", "tls_fingerprint=", "cfargotunnel"))
         )
         cal, level = calibrate_evidence(

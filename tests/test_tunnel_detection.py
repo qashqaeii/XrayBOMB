@@ -113,7 +113,15 @@ def test_arvan_http_cdn_and_direct_xray_not_reverse_proxy():
         cdn_backend_ips=["185.143.233.234"],
         guesses=[DeploymentGuess(name="Arvan CDN", confidence=0.92, description="")],
     )
-    xray = XrayTestResult(proxy_test=TestStatus.VALID, exit_ip="178.83.46.253", exit_country="US")
+    xray = XrayTestResult(
+        proxy_test=TestStatus.VALID,
+        internet_e2e_verified=True,
+        socks_handshake_verified=True,
+        process_alive_after_e2e=True,
+        e2e_contract_ok=True,
+        exit_ip="178.83.46.253",
+        exit_country="US",
+    )
 
     result = analyze_tunnels(
         config, dns, network, conn, deployment, TracerouteResult(), TunnelRoute(), xray,

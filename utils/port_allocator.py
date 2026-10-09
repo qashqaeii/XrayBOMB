@@ -1,4 +1,4 @@
-"""Allocate ephemeral TCP ports on loopback with bind retry."""
+"""Pick candidate loopback ports (bind probe only — does not reserve the port)."""
 
 from __future__ import annotations
 

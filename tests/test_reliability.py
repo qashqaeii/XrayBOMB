@@ -90,7 +90,7 @@ async def test_leak_check_no_definitive_leak_on_equal_ip():
         ])
 
         leak = await pd.run_leak_check(20001, "example.com", client_ip="1.2.3.4")
-    assert leak.ip_leak is False
+    assert leak.ip_leak is None
     assert leak.exit_ip_same_observed is True
     assert leak.dns_leak_status == TestStatus.NOT_TESTED
     assert leak.dns_leak is None
@@ -121,7 +121,13 @@ def test_cdn_direct_xray_not_proven_without_cdn_absence():
     config = _vless_config()
     deployment = DeploymentAnalysis(cdn_type="Cloudflare")
     connectivity = ConnectivityResult(http_reverse_proxy=None)
-    xray_ok = XrayTestResult(proxy_test=TestStatus.VALID)
+    xray_ok = XrayTestResult(
+        proxy_test=TestStatus.VALID,
+        internet_e2e_verified=True,
+        socks_handshake_verified=True,
+        process_alive_after_e2e=True,
+        e2e_contract_ok=True,
+    )
     ta = analyze_tunnels(
         config,
         DNSAnalysis(a_records=["104.16.0.1"]),
@@ -142,14 +148,20 @@ def test_confidence_cdn_keyword_not_proven_by_proxy_alone():
 
     r = AnalysisResult(
         config=config,
-        xray_test=XrayTestResult(proxy_test=TestStatus.VALID),
+        xray_test=XrayTestResult(
+            proxy_test=TestStatus.VALID,
+            internet_e2e_verified=True,
+            socks_handshake_verified=True,
+            process_alive_after_e2e=True,
+            e2e_contract_ok=True,
+        ),
         tunnel_analysis=TunnelAnalysis(
             detected_types=[
                 TunnelTypeMatch(
                     tunnel_id="cloudflare_cdn",
                     name="Cloudflare CDN",
                     confidence=0.8,
-                    evidence=["cdn=Cloudflare", "xray_proxy_test=VALID"],
+                    evidence=["cdn=Cloudflare", "internet_e2e_verified"],
                 )
             ],
         ),

@@ -1,4 +1,4 @@
-"""Recursive redaction of secrets in analysis exports."""
+"""Recursive redaction of secrets in analysis exports (output copies only)."""
 
 from __future__ import annotations
 
@@ -15,39 +15,44 @@ _SECRET_FIELD_NAMES = frozenset({
     "short_id",
     "private_key",
     "privateKey",
-    "id",
-    "token",
     "access_token",
     "refresh_token",
     "credential",
     "credentials",
     "raw_url",
     "subscription",
-    "link",
+    "socks_pass",
 })
 
-_VLESS_URL_RE = re.compile(
-    r"(vless|vmess|trojan|ss)://[^\s\"']+",
+_SKIP_REDACT_KEYS = frozenset({
+    "run_id",
+    "config_fingerprint",
+    "started_at",
+    "analyzed_at",
+    "timestamp",
+    "at",
+})
+
+_SHARE_LINK_RE = re.compile(
+    r"(vless|vmess|trojan|ss|ssr|hysteria2|hy2|tuic)://[^\s\"']+",
     re.IGNORECASE,
 )
 
 
 def _should_redact_key(key: str) -> bool:
     kl = key.lower()
+    if kl in _SKIP_REDACT_KEYS:
+        return False
     if kl in _SECRET_FIELD_NAMES:
         return True
+    if kl == "id":
+        return False
     return any(s in kl for s in ("password", "secret", "private", "token", "credential"))
 
 
-def redact_value(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, str):
-        if _VLESS_URL_RE.search(value):
-            return _VLESS_URL_RE.sub("<redacted-link>", value)
-        if len(value) > 12 and value.count("-") >= 4:
-            return mask_sensitive(value)
-        return value
+def redact_free_text(value: str) -> str:
+    if _SHARE_LINK_RE.search(value):
+        return _SHARE_LINK_RE.sub("<redacted-link>", value)
     return value
 
 
@@ -56,7 +61,9 @@ def deep_redact(obj: Any) -> Any:
     if isinstance(obj, dict):
         out: dict[str, Any] = {}
         for k, v in obj.items():
-            if _should_redact_key(k) and isinstance(v, str):
+            if k in _SKIP_REDACT_KEYS:
+                out[k] = v
+            elif _should_redact_key(k) and isinstance(v, str):
                 out[k] = mask_sensitive(v) if v else v
             else:
                 out[k] = deep_redact(v)
@@ -64,7 +71,7 @@ def deep_redact(obj: Any) -> Any:
     if isinstance(obj, list):
         return [deep_redact(x) for x in obj]
     if isinstance(obj, str):
-        return redact_value(obj)
+        return redact_free_text(obj)
     return obj
 
 

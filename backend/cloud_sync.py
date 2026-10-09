@@ -9,6 +9,7 @@ import httpx
 
 from backend.models import AnalysisResult
 from utils.logger import get_logger
+from utils.redaction import redact_analysis_dict
 from utils.settings import get_settings
 
 logger = get_logger(__name__)
@@ -23,9 +24,12 @@ async def sync_upload(result: AnalysisResult) -> bool:
         headers["Authorization"] = f"Bearer {settings.cloud_sync_token}"
     try:
         async with httpx.AsyncClient(timeout=30) as client:
+            payload = result.model_dump(mode="json")
+            if settings.redact_secrets_export:
+                payload = redact_analysis_dict(payload)
             resp = await client.post(
                 settings.cloud_sync_url,
-                content=result.model_dump_json(),
+                content=json.dumps(payload, default=str),
                 headers=headers,
             )
             return resp.status_code < 300

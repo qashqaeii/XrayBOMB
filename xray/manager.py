@@ -17,7 +17,7 @@ from typing import Optional
 import httpx
 
 from utils.logger import get_logger
-from utils.port_allocator import DEFAULT_LOOPBACK, is_port_listening
+from utils.port_allocator import DEFAULT_LOOPBACK
 
 logger = get_logger(__name__)
 
@@ -31,6 +31,8 @@ class XrayBackgroundRun:
     config_path: Path
     socks_host: str = DEFAULT_LOOPBACK
     socks_port: int = 0
+    socks_user: str = ""
+    socks_pass: str = ""
     log_lines: list[str] = field(default_factory=list)
     _reader_done: threading.Event = field(default_factory=threading.Event)
 
@@ -187,7 +189,18 @@ class XrayManager:
         outbound: dict,
         inbound_port: int = 10808,
         listen_host: str = DEFAULT_LOOPBACK,
+        *,
+        socks_user: Optional[str] = None,
+        socks_pass: Optional[str] = None,
     ) -> dict:
+        if socks_user and socks_pass:
+            inbound_settings: dict = {
+                "udp": True,
+                "auth": "password",
+                "accounts": [{"user": socks_user, "pass": socks_pass}],
+            }
+        else:
+            inbound_settings = {"udp": True, "auth": "noauth"}
         return {
             "log": {"loglevel": "warning"},
             "inbounds": [
@@ -195,7 +208,7 @@ class XrayManager:
                     "listen": listen_host,
                     "port": inbound_port,
                     "protocol": "socks",
-                    "settings": {"udp": True, "auth": "noauth"},
+                    "settings": inbound_settings,
                     "tag": "socks-in",
                 }
             ],
@@ -256,6 +269,8 @@ class XrayManager:
         *,
         socks_host: str = DEFAULT_LOOPBACK,
         socks_port: int,
+        socks_user: str = "",
+        socks_pass: str = "",
     ) -> XrayBackgroundRun:
         proc = subprocess.Popen(
             [str(self.binary_path), "run", "-c", str(config_path)],
@@ -268,6 +283,8 @@ class XrayManager:
             config_path=config_path,
             socks_host=socks_host,
             socks_port=socks_port,
+            socks_user=socks_user,
+            socks_pass=socks_pass,
         )
         run.start_log_reader()
         return run
@@ -279,18 +296,32 @@ class XrayManager:
         deadline_sec: float = 20.0,
         poll_interval: float = 0.25,
     ) -> tuple[bool, str]:
-        """Wait until process alive and SOCKS port accepts connections."""
+        """Wait until process alive, optional PID ownership, and SOCKS5 auth handshake."""
+        from utils.socks_verify import pid_listening_on_port, verify_socks5_username_auth
+
         deadline = time.monotonic() + deadline_sec
+        last_detail = ""
         while time.monotonic() < deadline:
             code = run.poll_exit()
             if code is not None:
                 return False, f"Xray exited early (code {code})"
-            if is_port_listening(run.socks_host, run.socks_port):
-                return True, "SOCKS listener ready"
+            if not run.socks_user or not run.socks_pass:
+                return False, "Missing per-run SOCKS credentials"
+            ok, detail = verify_socks5_username_auth(
+                run.socks_host,
+                run.socks_port,
+                run.socks_user,
+                run.socks_pass,
+            )
+            last_detail = detail
+            if ok:
+                owned = pid_listening_on_port(run.proc.pid, run.socks_port, run.socks_host)
+                if owned is False:
+                    return False, "SOCKS port not owned by test Xray PID"
+                extra = " (PID ownership confirmed)" if owned else " (PID ownership unverified)"
+                return True, f"SOCKS5 authenticated handshake OK{extra}"
             await asyncio_sleep(poll_interval)
-        if run.is_alive() and is_port_listening(run.socks_host, run.socks_port):
-            return True, "SOCKS listener ready (deadline edge)"
-        return False, "Timeout waiting for SOCKS readiness"
+        return False, f"Timeout waiting for authenticated SOCKS ({last_detail[:120]})"
 
     @staticmethod
     def stop_run(run: Optional[XrayBackgroundRun]) -> None:

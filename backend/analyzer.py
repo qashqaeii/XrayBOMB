@@ -32,7 +32,7 @@ from backend.security import (
 from backend.endpoint_targets import resolve_endpoint_targets
 from backend.implementation_analysis import build_implementation_analysis
 from backend.stealth_assessment import assess_stealth
-from backend.test_environment import build_test_environment_report
+from backend.test_environment import build_test_environment_from_run
 from dns_analyzer.resolver import analyze_dns
 from network.cdn_detector import lookup_ip_intelligence
 from network.connectivity import run_connectivity_tests
@@ -222,7 +222,6 @@ class ConfigAnalyzer:
             cert_transparency=cert_ct,
             xray_installed=xray_installed,
             endpoint_targets=endpoints.model_dump(),
-            test_environment=build_test_environment_report().model_dump(),
         )
         pre_calibrated = assess_stealth(pre_calibrated)
         deployment = pre_calibrated.deployment
@@ -244,10 +243,13 @@ class ConfigAnalyzer:
             })
         )
 
+        test_env = build_test_environment_from_run(xray_result.leak_check, xray_result).model_dump()
+
         result = pre_calibrated.model_copy(update={
             "setup_guide": setup_guide,
             "optimization": optimization,
             "implementation_analysis": impl.model_dump(),
+            "test_environment": test_env,
             "raw_data": {},
         })
 

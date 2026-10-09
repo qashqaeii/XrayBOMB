@@ -303,6 +303,12 @@ class BatchReportExporter:
     def __init__(self, batch: BatchAnalysisResult) -> None:
         self.batch = batch
 
+    def to_json(self, indent: int = 2) -> str:
+        payload = self.batch.model_dump(mode="json")
+        if get_settings().redact_secrets_export:
+            payload = deep_redact(payload)
+        return json.dumps(payload, indent=indent, default=str)
+
     def to_csv(self) -> str:
         output = StringIO()
         writer = csv.writer(output)
@@ -320,7 +326,7 @@ class BatchReportExporter:
         if fmt == "csv":
             path.write_text(self.to_csv(), encoding="utf-8")
         elif fmt == "json":
-            path.write_text(self.batch.model_dump_json(indent=2), encoding="utf-8")
+            path.write_text(self.to_json(), encoding="utf-8")
         elif len(self.batch.results) == 1:
             ReportExporter(self.batch.results[0]).save(path, fmt)
         else:

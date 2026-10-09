@@ -443,8 +443,10 @@ class LeakCheckResult(BaseModel):
     test_hostname: str = ""
     server_dns_ips: list[str] = Field(default_factory=list)
     direct_dns_ips: list[str] = Field(default_factory=list)
+    baseline_samples: list[dict[str, Any]] = Field(default_factory=list)
+    baseline_status: str = "unknown"
     exit_ip_same_observed: Optional[bool] = None
-    ip_leak: bool = False
+    ip_leak: Optional[bool] = None
     dns_leak: Optional[bool] = None
     dns_leak_status: TestStatus = TestStatus.NOT_TESTED
     baseline_inconclusive: bool = False
@@ -466,8 +468,14 @@ class XrayTestResult(BaseModel):
     config_validation_detail: str = ""
     proxy_test: TestStatus = TestStatus.PENDING
     proxy_latency_ms: Optional[float] = None
+    internet_e2e_verified: bool = False
+    e2e_contract_ok: bool = False
+    e2e_contract_detail: str = ""
+    socks_handshake_verified: bool = False
+    process_alive_after_e2e: bool = False
     socks_port: int = 10808
     socks_host: str = "127.0.0.1"
+    socks_auth_user: Optional[str] = None
     site_reachability: list[SiteReachabilityResult] = Field(default_factory=list)
     speed_test: SpeedTestResult = Field(default_factory=SpeedTestResult)
     leak_check: LeakCheckResult = Field(default_factory=LeakCheckResult)

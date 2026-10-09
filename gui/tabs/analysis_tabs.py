@@ -12,6 +12,7 @@ from backend.config_generator import generate_client_config_json
 from backend.config_optimizer import apply_optimization_to_config
 from backend.result_summary import _format_edge_route, _get_exit_intel, build_result_summary
 from backend.stealth_assessment import format_risk_factors, format_score, score_bar
+from backend.e2e_validity import evaluate_xray_test_result
 from backend.models import AnalysisResult
 from gui.components.copyable_text import CopyableTextbox
 from gui.components.two_row_tabs import TwoRowTabBar
@@ -38,7 +39,7 @@ class AnalysisTabs(ctk.CTkFrame):
 
         self._tab_names = [
             "Dashboard", "Result", "Overview", "Best Config", "Protocol Details", "DNS Analysis", "Network Analysis",
-            "TLS Analysis", "Intelligence", "Xray Test", "Security Report",
+            "TLS Analysis", "Intelligence", "Xray Test", "Connection Architecture", "Security Report",
             "Setup Guide", "How to Run", "Reproduction Guide", "Raw Data",
         ]
         self._panels: dict[str, CopyableTextbox] = {}
@@ -113,6 +114,7 @@ class AnalysisTabs(ctk.CTkFrame):
         self._render_tls(result)
         self._render_intelligence(result)
         self._render_xray(result)
+        self._render_connection_architecture(result)
         self._render_security(result)
         self._render_setup_guide(result)
         self._render_how_to_run(result)
@@ -140,7 +142,9 @@ class AnalysisTabs(ctk.CTkFrame):
         tls_badge = "✓ TLS" if c.tls else "✗ No TLS"
         reality_badge = "✓ REALITY" if c.reality else "○ No Reality"
         cdn_badge = f"CDN: {r.deployment.cdn_type}" if r.deployment.cdn_type else "No CDN"
+        e2e = evaluate_xray_test_result(r.xray_test)
         proxy = r.xray_test.proxy_test.value
+        e2e_line = "✓ Internet E2E verified (this run)" if e2e.internet_verified else f"○ E2E not verified ({e2e.stage})"
 
         dpi, cam, origin = r.dpi, r.camouflage, r.origin_exposure
         lines = [
@@ -162,7 +166,8 @@ class AnalysisTabs(ctk.CTkFrame):
             "── Status Badges ──",
             f"  {tls_badge}  |  {reality_badge}  |  {cdn_badge}",
             f"  Validation    : {'✓ Valid' if r.validation.valid else '✗ Issues found'}",
-            f"  Proxy Test    : {proxy}",
+            f"  Proxy Probe   : {proxy}",
+            f"  Internet E2E  : {e2e_line}",
             "",
             "── Tunnel Route ──",
             f"  {self._format_route_display(r)}",
@@ -518,7 +523,11 @@ class AnalysisTabs(ctk.CTkFrame):
             "Xray Core Test & Proxy Diagnostics", "=" * 50, "",
             f"  Xray Installed: {'Yes ✓' if r.xray_installed else 'No ✗'}",
             f"  Status        : {x.status.value}",
-            f"  Proxy Test    : {x.proxy_test.value} ({x.proxy_latency_ms or '-'} ms via SOCKS5:{x.socks_port})",
+            f"  Run ID        : {x.run_id or 'N/A'}",
+            f"  Proxy Probe   : {x.proxy_test.value} ({x.proxy_latency_ms or '-'} ms)",
+            f"  Internet E2E  : {'Verified' if x.internet_e2e_verified else 'Not verified'}",
+            f"  SOCKS         : {x.socks_host}:{x.socks_port} (per-run auth)",
+            f"  Config -test  : {x.config_validation.value}",
             f"  Exit IP       : {x.exit_ip or 'N/A'} ({x.exit_country or '?'})",
             f"  Version       : {x.xray_version or 'N/A'}",
             f"  Summary       : {x.summary}",
@@ -550,7 +559,8 @@ class AnalysisTabs(ctk.CTkFrame):
             "── IP / DNS Leak Check ──",
             f"  Client IP     : {lk.client_ip or 'N/A'}",
             f"  Proxy Exit IP : {lk.proxy_exit_ip or 'N/A'} ({lk.proxy_exit_country or '?'}) colo={lk.proxy_exit_colo or '?'}",
-            f"  IP Leak       : {'YES ⚠' if lk.ip_leak else 'No ✓'}",
+            f"  IP Leak       : {('Unknown' if lk.ip_leak is None else ('YES ⚠' if lk.ip_leak else 'No ✓'))}",
+            f"  Baseline      : {lk.baseline_status} ({len(lk.baseline_samples)} samples)",
             f"  Direct DNS A  : {', '.join(lk.direct_dns_ips) or 'N/A'}",
         ])
         for note in lk.notes:
@@ -571,6 +581,45 @@ class AnalysisTabs(ctk.CTkFrame):
         if x.errors:
             lines.extend(["", "── Errors ──"] + x.errors)
         self._write("Xray Test", "\n".join(lines))
+
+    def _render_connection_architecture(self, r: AnalysisResult) -> None:
+        impl = r.implementation_analysis or {}
+        lines = [
+            impl.get("title", "معماری سازگار با مشاهدات"),
+            "=" * 50,
+            "",
+            "── Effective client (Xray builder rules) ──",
+        ]
+        for row in impl.get("client_effective_settings", []):
+            lines.append(f"  • {row}")
+        lines.extend([
+            "",
+            f"  Entry           : {impl.get('entry_point', '')}",
+            f"  Peer observed   : {impl.get('entry_peer_observed', '')}",
+            f"  E2E             : {impl.get('xray_e2e', '')}",
+            f"  External WS     : {impl.get('external_ws_probe', '')}",
+            f"  Baseline vs exit: {impl.get('baseline_vs_exit', '')}",
+            f"  Entry vs exit   : {impl.get('entry_vs_exit', '')}",
+            "",
+            "── Scenarios (compatible architecture, not proven server config) ──",
+        ])
+        for sc in impl.get("scenarios", []):
+            lines.append(f"  ▶ {sc.get('name', '?')} [{sc.get('confidence_note', '')}]")
+            for e in sc.get("supporting_evidence", [])[:4]:
+                lines.append(f"      + {e}")
+            for e in sc.get("contradicting_evidence", [])[:3]:
+                lines.append(f"      − {e}")
+            for u in sc.get("unknowns", [])[:3]:
+                lines.append(f"      ? {u}")
+            for f in sc.get("suggested_followup_checks", [])[:2]:
+                lines.append(f"      → {f}")
+            lines.append("")
+        lines.append("── Reconstruction (similar stack, not copied server) ──")
+        for step in impl.get("reconstruction_steps", []):
+            lines.append(f"  {step}")
+        for lim in impl.get("client_side_limitations", []):
+            lines.append(f"  ‣ {lim}")
+        self._write("Connection Architecture", "\n".join(lines))
 
     def _render_security(self, r: AnalysisResult) -> None:
         s = r.security

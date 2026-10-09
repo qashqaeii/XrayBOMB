@@ -54,8 +54,12 @@ def _reality_vless() -> AnalysisResult:
         deployment=DeploymentAnalysis(cdn_type="Cloudflare"),
         xray_test=XrayTestResult(
             proxy_test=TestStatus.VALID,
+            internet_e2e_verified=True,
+            socks_handshake_verified=True,
+            process_alive_after_e2e=True,
+            e2e_contract_ok=True,
             exit_ip="104.16.2.2",
-            leak_check=LeakCheckResult(ip_leak=False),
+            leak_check=LeakCheckResult(ip_leak=None),
         ),
     )
 

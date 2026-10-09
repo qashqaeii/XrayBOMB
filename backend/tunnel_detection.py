@@ -358,13 +358,15 @@ def analyze_tunnels(
             matches.append(_match("direct_vps", vps_conf, ev, steps))
 
     # ── Direct Xray on public port (no nginx/caddy in Server header) ──
-    proxy_ok = xray_test and xray_test.proxy_test == TestStatus.VALID
+    from backend.e2e_validity import evaluate_xray_test_result
+
+    proxy_ok = bool(xray_test and evaluate_xray_test_result(xray_test).internet_verified)
     has_cdn_edge = bool(cdn_ips or primary_cdn or deployment.cdn_type)
     if proxy_ok and not connectivity.http_reverse_proxy and not has_cdn_edge:
         dx_conf = 0.62
         if connectivity.http_panel_detected:
             dx_conf = 0.78
-        ev = ["xray_proxy_test=VALID", "no_nginx/caddy_in_Server_header"]
+        ev = ["internet_e2e_verified", "no_nginx/caddy_in_Server_header"]
         if connectivity.http_panel_detected:
             ev.append(f"panel={connectivity.http_panel_detected}")
         steps = [

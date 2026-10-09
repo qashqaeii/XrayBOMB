@@ -1,25 +1,27 @@
-# راهنمای تست مجدد (همراه اول / ایرانسل)
+# تست دستی پس از دریافت تغییرات
 
-## وضعیت VPN
+## قبل از Analyze
 
-| سناریو | VPN دیگر | v2ray/XrayBOMB |
-|--------|----------|----------------|
-| A — baseline تمیز | **خاموش** | خاموش |
-| B — مثل الان | روشن | روشن |
-| C — فقط کانفیگ تحت تست | خاموش | فقط SOCKS تست XrayBOMB |
+1. **V2Ray و Proxifier را خاموش کنید** (و در صورت امکان VPN سیستم).
+2. در تنظیمات برنامه: `Run Xray Test` و در صورت نیاز `Real Proxy Test` را روشن بگذارید.
 
-گزارش `test_environment` و `leak_check` را برای هر سنario جدا ذخیره کنید.
+## حین Analyze
 
-## مراحل
+- در تب **Xray Test**: `run_id`، `Internet E2E`، `Baseline` و `IP Leak` را ببینید.
+- در تب **Connection Architecture**: سناریوها، شواهد موافق/مخالف و تفاوت probe بیرونی با E2E.
+- `IP Leak = Unknown` در baseline نامطمئن **طبیعی** است؛ False به‌معنی «قطعی بدون نشت» نیست.
 
-1. یک کانفیگ را Analyze کنید؛ `run_id` و `socks_port` در بخش Xray Test را یادداشت کنید.
-2. سنario A را اجرا کنید و IP پایه را با IP خروجی (`exit_ip`) مقایسه کنید.
-3. batch چهار کانفیگ: هر ردیف باید `socks_port` متفاوت و نتیجه مستقل داشته باشد.
-4. export JSON را با `redact_secrets_export=true` بررسی کنید — UUID/لینک نباید باز باشد.
+## خروجی JSON پاک‌سازی‌شده برای اشتراک
 
-## محدودیت‌های باقی‌مانده
+- منوی Export → JSON (تنظیم `redact_secrets_export` در Settings فعال باشد).
+- Batch: `BatchReportExporter.to_json()` همان redaction را اعمال می‌کند.
+- Cloud Sync نیز در صورت فعال بودن redaction، payload پالایش‌شده می‌فرستد.
 
-- `trust_env=False` پروکسی محیطی Python را دور می‌زند، نه TUN/VPN سطح OS.
-- تست DNS leak واقعی هنوز **Not tested** است.
-- REALITY/gRPC/QUIC از بیرون بدون xray-core احراز کامل نمی‌شوند.
-- SSH read-only روی سرور خودتان: از پنل SSH موجود با دستورات فقط-خواندنی (`ss -lntp`, `systemctl status`) استفاده کنید؛ اتوماسیون جمع‌آوری در نسخه بعدی.
+## سناریوهای پیشنهادی
+
+| # | هدف |
+|---|-----|
+| 1 | یک کانفیگ با VPN/Proxifier **خاموش** — baseline تمیز |
+| 2 | همان کانفیگ با Proxifier روشن — مقایسه baseline_inconclusive |
+| 3 | Batch ۴ کانفیگ — `socks_port` و `run_id` مستقل |
+| 4 | `real_proxy_test=False` — فقط `xray -test`، بدون ادعای اینترنت |
